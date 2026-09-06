@@ -6,8 +6,19 @@
 
 #include <memory>
 #include <cstdint>
+#include <string>
 
 namespace Tempest {
+
+struct GamepadState {
+  float leftStickX   = 0.0f;
+  float leftStickY   = 0.0f;
+  float rightStickX  = 0.0f;
+  float rightStickY  = 0.0f;
+  float leftTrigger  = 0.0f;
+  float rightTrigger = 0.0f;
+  bool  connected    = false;
+};
 
 class SizeEvent;
 class MouseEvent;
@@ -59,6 +70,11 @@ class SystemApi {
     static void     addOverlay (UiOverlay* ui);
     static void     takeOverlay(UiOverlay* ui);
 
+    static GamepadState gamepadState();
+    /// Writable persistent directory owned by the application. Empty on
+    /// platforms that do not provide one through the windowing backend.
+    static std::string appDataPath();
+
   protected:
     struct AppCallBack {
       virtual ~AppCallBack()=default;
@@ -80,6 +96,9 @@ class SystemApi {
     virtual void     implShowCursor(SystemApi::Window *w, CursorShape show) = 0;
 
     virtual float    implUiScale(SystemApi::Window* w);
+
+    virtual GamepadState implGamepadState();
+    virtual std::string  implAppDataPath();
 
     virtual bool     implIsRunning() = 0;
     virtual int      implExec(AppCallBack& cb) = 0;

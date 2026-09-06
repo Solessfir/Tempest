@@ -58,6 +58,20 @@ if(IOS)
   set(TEMPEST_BUILD_SHARED OFF)
 endif()
 
+if(ANDROID)
+  set(TEMPEST_BUILD_SHARED OFF)
+  # Android always uses Vulkan
+  set(TEMPEST_BUILD_VULKAN ON CACHE INTERNAL "")
+  set(TEMPEST_BUILD_METAL OFF CACHE INTERNAL "")
+  set(TEMPEST_BUILD_DIRECTX12 OFF CACHE INTERNAL "")
+
+  # Add android_native_app_glue
+  set(ANDROID_NATIVE_APP_GLUE_DIR "${ANDROID_NDK}/sources/android/native_app_glue")
+  add_library(native_app_glue STATIC "${ANDROID_NATIVE_APP_GLUE_DIR}/android_native_app_glue.c")
+  target_include_directories(native_app_glue PUBLIC "${ANDROID_NATIVE_APP_GLUE_DIR}")
+  target_include_directories(${PROJECT_NAME} PUBLIC "${ANDROID_NATIVE_APP_GLUE_DIR}")
+endif()
+
 ### Compilers
 if(MSVC)
   add_definitions(-D_USE_MATH_DEFINES)
@@ -116,6 +130,20 @@ if(TEMPEST_BUILD_AUDIO)
       set(ALSOFT_DLOPEN           OFF CACHE INTERNAL "")
       set(ALSOFT_NO_CONFIG_UTIL   OFF CACHE INTERNAL "")
   endif()
+  if(ANDROID)
+      set(ALSOFT_BACKEND_OPENSL     ON  CACHE INTERNAL "")
+      set(ALSOFT_REQUIRE_OPENSL     ON  CACHE INTERNAL "")
+      set(ALSOFT_BACKEND_WAVE       OFF CACHE INTERNAL "")
+      set(ALSOFT_BACKEND_ALSA       OFF CACHE INTERNAL "")
+      set(ALSOFT_BACKEND_OSS        OFF CACHE INTERNAL "")
+      set(ALSOFT_BACKEND_PULSEAUDIO OFF CACHE INTERNAL "")
+      set(ALSOFT_BACKEND_PIPEWIRE   OFF CACHE INTERNAL "")
+      set(ALSOFT_REQUIRE_PIPEWIRE   OFF CACHE INTERNAL "")
+      set(ALSOFT_BACKEND_JACK       OFF CACHE INTERNAL "")
+      set(ALSOFT_BACKEND_SNDIO      OFF CACHE INTERNAL "")
+      set(ALSOFT_RTKIT              OFF CACHE INTERNAL "")
+      set(ALSOFT_DLOPEN             OFF CACHE INTERNAL "")
+  endif()
   set(AL_LIBTYPE_STATIC   ON  CACHE INTERNAL "")
   set(ALSOFT_EXAMPLES     OFF CACHE INTERNAL "")
   set(ALSOFT_UTILS        OFF CACHE INTERNAL "")
@@ -126,6 +154,9 @@ if(TEMPEST_BUILD_AUDIO)
   target_include_directories(${PROJECT_NAME} PRIVATE "thirdparty/openal-soft/include")
   target_link_libraries(${PROJECT_NAME} PRIVATE OpenAL)
   if(IOS)
+    target_compile_options(OpenAL PRIVATE -Wno-nullability-completeness)
+  endif()
+  if(ANDROID)
     target_compile_options(OpenAL PRIVATE -Wno-nullability-completeness)
   endif()
   if(NOT MSVC)
@@ -145,17 +176,22 @@ if(TEMPEST_BUILD_VULKAN)
   add_definitions(-DVULKAN_HPP_NO_EXCEPTIONS)
   add_definitions(-DVULKAN_HPP_NO_SMART_HANDLE)
 
-  if("${CMAKE_SIZEOF_VOID_P}" EQUAL "8")
-    target_link_directories(${PROJECT_NAME} PRIVATE "$ENV{VULKAN_SDK}/lib")
-  else()
-    target_link_directories(${PROJECT_NAME} PRIVATE "$ENV{VULKAN_SDK}/Lib32")
-  endif()
-
-  target_include_directories(${PROJECT_NAME} PRIVATE "$ENV{VULKAN_SDK}/include")
-  if(WIN32)
-    target_link_libraries(${PROJECT_NAME} PRIVATE vulkan-1)
-  else()
+  if(ANDROID)
+    # Android NDK provides Vulkan headers and library
     target_link_libraries(${PROJECT_NAME} PRIVATE vulkan)
+  else()
+    if("${CMAKE_SIZEOF_VOID_P}" EQUAL "8")
+      target_link_directories(${PROJECT_NAME} PRIVATE "$ENV{VULKAN_SDK}/lib")
+    else()
+      target_link_directories(${PROJECT_NAME} PRIVATE "$ENV{VULKAN_SDK}/Lib32")
+    endif()
+
+    target_include_directories(${PROJECT_NAME} PRIVATE "$ENV{VULKAN_SDK}/include")
+    if(WIN32)
+      target_link_libraries(${PROJECT_NAME} PRIVATE vulkan-1)
+    else()
+      target_link_libraries(${PROJECT_NAME} PRIVATE vulkan)
+    endif()
   endif()
 endif()
 
@@ -224,9 +260,25 @@ file(GLOB SHADER_SOURCES
 
 # GLSL to SPIRV compiler
 find_program(GLSLANGVALIDATOR glslangValidator "/opt/homebrew/bin")
+if(NOT GLSLANGVALIDATOR AND ANDROID)
+  file(GLOB NDK_GLSLANGVALIDATOR
+    "${ANDROID_NDK}/shader-tools/*/glslangValidator"
+    "${ANDROID_NDK}/shader-tools/*/glslangValidator.exe")
+  list(LENGTH NDK_GLSLANGVALIDATOR NDK_GLSLANGVALIDATOR_COUNT)
+  if(NDK_GLSLANGVALIDATOR_COUNT GREATER 0)
+    list(GET NDK_GLSLANGVALIDATOR 0 GLSLANGVALIDATOR)
+  endif()
+endif()
+if(NOT GLSLANGVALIDATOR AND ANDROID)
+  find_program(GLSLANGVALIDATOR glslc
+    "${ANDROID_NDK}/shader-tools/windows-x86_64"
+    "${ANDROID_NDK}/shader-tools/linux-x86_64"
+    "${ANDROID_NDK}/shader-tools/darwin-x86_64")
+endif()
 if(NOT GLSLANGVALIDATOR)
   message(FATAL_ERROR "glslangValidator required")
 endif()
+get_filename_component(SHADER_COMPILER_NAME "${GLSLANGVALIDATOR}" NAME_WE)
 
 function(add_shader OUTPUT SOURCE)
   set(OUTPUT_FILE "${PROJECT_BINARY_DIR}/sprv/${OUTPUT}")
@@ -235,11 +287,16 @@ function(add_shader OUTPUT SOURCE)
   set(SHADERS_SPRV ${SHADERS_SPRV} ${OUTPUT_FILE} PARENT_SCOPE)
 
   list(SUBLIST ARGV 2 -1 VARS)
+  if(SHADER_COMPILER_NAME STREQUAL "glslc")
+    set(SHADER_VULKAN_FLAG "")
+  else()
+    set(SHADER_VULKAN_FLAG "-V")
+  endif()
   add_custom_command(
     OUTPUT     ${OUTPUT_FILE}
     DEPENDS    ${SOURCE_FILE}
     COMMAND    ${CMAKE_COMMAND} -E make_directory "${PROJECT_BINARY_DIR}/sprv/"
-    COMMAND    ${GLSLANGVALIDATOR} -V ${VARS} "${SOURCE_FILE}" -o ${OUTPUT_FILE}
+    COMMAND    ${GLSLANGVALIDATOR} ${SHADER_VULKAN_FLAG} ${VARS} "${SOURCE_FILE}" -o ${OUTPUT_FILE}
     )
 endfunction(add_shader)
 
@@ -329,6 +386,9 @@ elseif(IOS)
   target_link_libraries(${PROJECT_NAME} PRIVATE "-framework UiKit" "-framework Foundation" "-framework QuartzCore" "-framework Metal")
 elseif(APPLE)
   target_link_libraries(${PROJECT_NAME} PRIVATE "-framework AppKit" "-framework QuartzCore" "-framework Metal")
+elseif(ANDROID)
+  #NOTE: use Android NDK toolchain for configure
+  target_link_libraries(${PROJECT_NAME} PRIVATE android log native_app_glue)
 elseif(UNIX)
   target_link_libraries(${PROJECT_NAME} PRIVATE X11 Xcursor)
 endif()
