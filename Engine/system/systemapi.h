@@ -7,6 +7,7 @@
 #include <memory>
 #include <cstdint>
 #include <string>
+#include <string_view>
 
 namespace Tempest {
 
@@ -71,6 +72,8 @@ class SystemApi {
     static void     takeOverlay(UiOverlay* ui);
 
     static GamepadState gamepadState();
+    static void showSoftInput(std::string_view text);
+    static void hideSoftInput();
     /// Writable persistent directory owned by the application.
     /// Returns empty on platforms that do not provide one through the windowing backend.
     static std::string appDataPath();
@@ -98,6 +101,8 @@ class SystemApi {
     virtual float    implUiScale(SystemApi::Window* w);
 
     virtual GamepadState implGamepadState();
+    virtual void         implShowSoftInput(std::string_view text);
+    virtual void         implHideSoftInput();
     virtual std::string  implAppDataPath();
 
     virtual bool     implIsRunning() = 0;

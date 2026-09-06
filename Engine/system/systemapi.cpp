@@ -221,6 +221,20 @@ GamepadState SystemApi::implGamepadState() {
   return GamepadState{};
   }
 
+void SystemApi::showSoftInput(std::string_view text) {
+  inst().implShowSoftInput(text);
+  }
+
+void SystemApi::hideSoftInput() {
+  inst().implHideSoftInput();
+  }
+
+void SystemApi::implShowSoftInput(std::string_view) {
+  }
+
+void SystemApi::implHideSoftInput() {
+  }
+
 std::string SystemApi::appDataPath() {
   return inst().implAppDataPath();
   }

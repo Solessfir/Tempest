@@ -30,6 +30,8 @@ class AndroidApi final: SystemApi {
     void     implSetWindowTitle(SystemApi::Window *w, const char* utf8) override;
 
     GamepadState implGamepadState() override;
+    void         implShowSoftInput(std::string_view text) override;
+    void         implHideSoftInput() override;
     std::string  implAppDataPath() override;
 
   friend class SystemApi;

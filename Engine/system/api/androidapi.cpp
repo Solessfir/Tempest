@@ -17,6 +17,7 @@
 
 #include <Tempest/Window>
 #include <Tempest/Event>
+#include <Tempest/TextCodec>
 #if defined(TEMPEST_BUILD_AUDIO)
 #include <Tempest/SoundDevice>
 #endif
@@ -113,6 +114,8 @@ static std::atomic_bool     g_isActive{false};
 static std::atomic_bool     g_hasWindow{false};
 static bool                 g_isResumed = false;
 static bool                 g_hasFocus  = false;
+static std::mutex           g_softInputMutex;
+static std::u32string       g_softInputText;
 
 // Gamepad state tracking (uses struct from SystemApi)
 static GamepadState g_gamepad;
@@ -129,6 +132,58 @@ std::string AndroidApi::implAppDataPath() {
     path = g_app->activity->internalDataPath;
   return path==nullptr ? std::string{} : std::string(path);
 }
+
+void AndroidApi::implShowSoftInput(std::string_view text) {
+  if(g_app==nullptr || g_app->activity==nullptr)
+    return;
+
+  auto utf16 = TextCodec::toUtf16(text);
+  {
+    std::lock_guard<std::mutex> lock(g_softInputMutex);
+    g_softInputText.clear();
+    for(size_t i=0; i<utf16.size(); ++i) {
+      char32_t code = utf16[i];
+      if(0xD800<=code && code<=0xDBFF && i+1<utf16.size()) {
+        const char32_t low = utf16[i+1];
+        if(0xDC00<=low && low<=0xDFFF) {
+          code = 0x10000+((code-0xD800)<<10)+(low-0xDC00);
+          ++i;
+          }
+        }
+      g_softInputText.push_back(code);
+      }
+  }
+
+  JNIEnv* env = nullptr;
+  g_app->activity->vm->AttachCurrentThread(&env,nullptr);
+  if(env==nullptr)
+    return;
+  jclass activityClass = env->GetObjectClass(g_app->activity->clazz);
+  jmethodID show = activityClass==nullptr ? nullptr :
+      env->GetMethodID(activityClass,"showSoftInput","(Ljava/lang/String;)V");
+  if(show!=nullptr) {
+    jstring value = env->NewString(reinterpret_cast<const jchar*>(utf16.data()),jsize(utf16.size()));
+    env->CallVoidMethod(g_app->activity->clazz,show,value);
+    env->DeleteLocalRef(value);
+    }
+  g_app->activity->vm->DetachCurrentThread();
+  }
+
+void AndroidApi::implHideSoftInput() {
+  if(g_app==nullptr || g_app->activity==nullptr)
+    return;
+
+  JNIEnv* env = nullptr;
+  g_app->activity->vm->AttachCurrentThread(&env,nullptr);
+  if(env==nullptr)
+    return;
+  jclass activityClass = env->GetObjectClass(g_app->activity->clazz);
+  jmethodID hide = activityClass==nullptr ? nullptr :
+      env->GetMethodID(activityClass,"hideSoftInput","()V");
+  if(hide!=nullptr)
+    env->CallVoidMethod(g_app->activity->clazz,hide);
+  g_app->activity->vm->DetachCurrentThread();
+  }
 
 // Event queue for cross-thread communication
 struct AppEvent {
@@ -149,10 +204,10 @@ struct AppEvent {
   union {
     struct { int32_t w, h; } resize;
     struct { int x, y, pointerId; } touch;
-    struct { uint32_t keyCode; } key;
+    struct { uint32_t keyCode, code; } key;
     struct { bool gained; } focus;
     struct { float lx, ly, rx, ry, lt, rt; } gamepad;
-  } data;
+  } data{};
 };
 
 static std::mutex              g_eventMutex;
@@ -230,6 +285,57 @@ static bool popEvent(AppEvent& evt) {
   g_eventQueue.pop();
   return true;
 }
+
+static void pushKey(uint32_t keyCode, uint32_t code) {
+  AppEvent evt;
+  evt.data.key.keyCode = keyCode;
+  evt.data.key.code    = code;
+  evt.type = AppEvent::KeyDown;
+  pushEvent(evt);
+  evt.type = AppEvent::KeyUp;
+  pushEvent(evt);
+  }
+
+static std::u32string fromJavaString(JNIEnv* env, jstring text) {
+  std::u32string ret;
+  if(text==nullptr)
+    return ret;
+
+  const jsize size = env->GetStringLength(text);
+  const jchar* src = env->GetStringChars(text,nullptr);
+  if(src==nullptr)
+    return ret;
+  ret.reserve(size_t(size));
+  for(jsize i=0; i<size; ++i) {
+    char32_t code = src[i];
+    if(0xD800<=code && code<=0xDBFF && i+1<size) {
+      const char32_t low = src[i+1];
+      if(0xDC00<=low && low<=0xDFFF) {
+        code = 0x10000+((code-0xD800)<<10)+(low-0xDC00);
+        ++i;
+        }
+      }
+    ret.push_back(code);
+    }
+  env->ReleaseStringChars(text,src);
+  return ret;
+  }
+
+extern "C" JNIEXPORT void JNICALL
+Java_org_tempest_TempestNativeActivity_nativeSetText(JNIEnv* env, jobject, jstring text) {
+  auto next = fromJavaString(env,text);
+  std::lock_guard<std::mutex> lock(g_softInputMutex);
+  for(size_t i=0; i<g_softInputText.size(); ++i)
+    pushKey(AKEYCODE_DEL,0);
+  for(char32_t code:next)
+    pushKey(AKEYCODE_UNKNOWN,uint32_t(code));
+  g_softInputText = std::move(next);
+  }
+
+extern "C" JNIEXPORT void JNICALL
+Java_org_tempest_TempestNativeActivity_nativeEditorAction(JNIEnv*, jobject) {
+  pushKey(AKEYCODE_ENTER,'\n');
+  }
 
 static void useMusicVolumeControls() {
   if(g_app==nullptr || g_app->activity==nullptr)
@@ -764,14 +870,14 @@ void AndroidApi::implProcessEvents(AppCallBack& cb) {
       case AppEvent::KeyDown: {
         // Map Android key codes to Tempest key codes using the translation table
         auto key = Event::KeyType(translateKey(evt.data.key.keyCode));
-        KeyEvent e(key, evt.data.key.keyCode, Event::M_NoModifier, Event::KeyDown);
+        KeyEvent e(key, evt.data.key.code, Event::M_NoModifier, Event::KeyDown);
         AndroidApi::dispatchKeyDown(wnd, e, evt.data.key.keyCode);
         break;
       }
 
       case AppEvent::KeyUp: {
         auto key = Event::KeyType(translateKey(evt.data.key.keyCode));
-        KeyEvent e(key, evt.data.key.keyCode, Event::M_NoModifier, Event::KeyUp);
+        KeyEvent e(key, evt.data.key.code, Event::M_NoModifier, Event::KeyUp);
         AndroidApi::dispatchKeyUp(wnd, e, evt.data.key.keyCode);
         break;
       }
