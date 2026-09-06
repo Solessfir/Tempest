@@ -119,10 +119,35 @@ static std::u32string       g_softInputText;
 
 // Gamepad state tracking (uses struct from SystemApi)
 static GamepadState g_gamepad;
+static std::mutex g_gamepadMutex;
 
 GamepadState AndroidApi::implGamepadState() {
-  return g_gamepad;
+  std::lock_guard<std::mutex> guard(g_gamepadMutex);
+  auto state = g_gamepad;
+  g_gamepad.buttonChanges.clear();
+  return state;
 }
+
+extern "C" JNIEXPORT void JNICALL
+Java_org_tempest_TempestNativeActivity_nativeGamepad(JNIEnv*, jobject, jboolean connected,
+                                                   jint buttons, jfloat lx, jfloat ly,
+                                                   jfloat rx, jfloat ry, jfloat lt, jfloat rt) {
+  std::lock_guard<std::mutex> guard(g_gamepadMutex);
+  const auto next = uint32_t(buttons);
+  if(next!=g_gamepad.buttons) {
+    if(g_gamepad.buttonChanges.size()>=256)
+      g_gamepad.buttonChanges.clear();
+    g_gamepad.buttonChanges.push_back(next);
+    }
+  g_gamepad.buttons = next;
+  g_gamepad.connected = connected;
+  g_gamepad.leftStickX = lx;
+  g_gamepad.leftStickY = ly;
+  g_gamepad.rightStickX = rx;
+  g_gamepad.rightStickY = ry;
+  g_gamepad.leftTrigger = lt;
+  g_gamepad.rightTrigger = rt;
+  }
 
 std::string AndroidApi::implAppDataPath() {
   if(g_app==nullptr || g_app->activity==nullptr)
@@ -485,93 +510,12 @@ static int32_t onInputEvent(struct android_app* app, AInputEvent* event) {
   int32_t eventType = AInputEvent_getType(event);
   int32_t source = AInputEvent_getSource(event);
 
+  // The activity reports controller inputs without translating them into keyboard keys.
+  if((source & AINPUT_SOURCE_GAMEPAD)==AINPUT_SOURCE_GAMEPAD ||
+     (source & AINPUT_SOURCE_JOYSTICK)==AINPUT_SOURCE_JOYSTICK)
+    return 0;
+
   if (eventType == AINPUT_EVENT_TYPE_MOTION) {
-    // Check if this is gamepad/joystick input
-    if ((source & AINPUT_SOURCE_JOYSTICK) == AINPUT_SOURCE_JOYSTICK ||
-        (source & AINPUT_SOURCE_GAMEPAD) == AINPUT_SOURCE_GAMEPAD) {
-      // Read analog stick values
-      float lx = AMotionEvent_getAxisValue(event, AMOTION_EVENT_AXIS_X, 0);
-      float ly = AMotionEvent_getAxisValue(event, AMOTION_EVENT_AXIS_Y, 0);
-      float rx = AMotionEvent_getAxisValue(event, AMOTION_EVENT_AXIS_Z, 0);
-      float ry = AMotionEvent_getAxisValue(event, AMOTION_EVENT_AXIS_RZ, 0);
-      float lt = AMotionEvent_getAxisValue(event, AMOTION_EVENT_AXIS_LTRIGGER, 0);
-      float rt = AMotionEvent_getAxisValue(event, AMOTION_EVENT_AXIS_RTRIGGER, 0);
-
-      // Some controllers use HAT axes for D-pad
-      float hatX = AMotionEvent_getAxisValue(event, AMOTION_EVENT_AXIS_HAT_X, 0);
-      float hatY = AMotionEvent_getAxisValue(event, AMOTION_EVENT_AXIS_HAT_Y, 0);
-
-      // Apply deadzone (0.15)
-      auto applyDeadzone = [](float v) -> float {
-        const float deadzone = 0.15f;
-        if (std::abs(v) < deadzone) return 0.0f;
-        return v;
-      };
-
-      lx = applyDeadzone(lx);
-      ly = applyDeadzone(ly);
-      rx = applyDeadzone(rx);
-      ry = applyDeadzone(ry);
-
-      // Update global state
-      g_gamepad.leftStickX  = lx;
-      g_gamepad.leftStickY  = ly;
-      g_gamepad.rightStickX = rx;
-      g_gamepad.rightStickY = ry;
-      g_gamepad.leftTrigger  = lt;
-      g_gamepad.rightTrigger = rt;
-      g_gamepad.connected   = true;
-
-      // Triggers are exposed as digital Gothic controls as well as analog state.
-      // RT is the primary action and LT is the walk modifier.
-      static bool lastLt = false, lastRt = false;
-      const bool nextLt = lt > 0.5f;
-      const bool nextRt = rt > 0.5f;
-      if(nextLt!=lastLt) {
-        AppEvent e;
-        e.type = nextLt ? AppEvent::KeyDown : AppEvent::KeyUp;
-        e.data.key.keyCode = AKEYCODE_SHIFT_LEFT;
-        pushEvent(e);
-        lastLt = nextLt;
-        }
-      if(nextRt!=lastRt) {
-        AppEvent e;
-        e.type = nextRt ? AppEvent::KeyDown : AppEvent::KeyUp;
-        e.data.key.keyCode = AKEYCODE_CTRL_LEFT;
-        pushEvent(e);
-        lastRt = nextRt;
-        }
-
-      // Push gamepad axis event
-      AppEvent evt;
-      evt.type = AppEvent::GamepadAxis;
-      evt.data.gamepad.lx = lx;
-      evt.data.gamepad.ly = ly;
-      evt.data.gamepad.rx = rx;
-      evt.data.gamepad.ry = ry;
-      evt.data.gamepad.lt = lt;
-      evt.data.gamepad.rt = rt;
-      pushEvent(evt);
-
-      // Generate D-pad key events from HAT
-      static float lastHatX = 0, lastHatY = 0;
-      if (hatX != lastHatX) {
-        if (lastHatX < -0.5f) { AppEvent e; e.type = AppEvent::KeyUp; e.data.key.keyCode = AKEYCODE_DPAD_LEFT; pushEvent(e); }
-        if (lastHatX > 0.5f)  { AppEvent e; e.type = AppEvent::KeyUp; e.data.key.keyCode = AKEYCODE_DPAD_RIGHT; pushEvent(e); }
-        if (hatX < -0.5f) { AppEvent e; e.type = AppEvent::KeyDown; e.data.key.keyCode = AKEYCODE_DPAD_LEFT; pushEvent(e); }
-        if (hatX > 0.5f)  { AppEvent e; e.type = AppEvent::KeyDown; e.data.key.keyCode = AKEYCODE_DPAD_RIGHT; pushEvent(e); }
-        lastHatX = hatX;
-      }
-      if (hatY != lastHatY) {
-        if (lastHatY < -0.5f) { AppEvent e; e.type = AppEvent::KeyUp; e.data.key.keyCode = AKEYCODE_DPAD_UP; pushEvent(e); }
-        if (lastHatY > 0.5f)  { AppEvent e; e.type = AppEvent::KeyUp; e.data.key.keyCode = AKEYCODE_DPAD_DOWN; pushEvent(e); }
-        if (hatY < -0.5f) { AppEvent e; e.type = AppEvent::KeyDown; e.data.key.keyCode = AKEYCODE_DPAD_UP; pushEvent(e); }
-        if (hatY > 0.5f)  { AppEvent e; e.type = AppEvent::KeyDown; e.data.key.keyCode = AKEYCODE_DPAD_DOWN; pushEvent(e); }
-        lastHatY = hatY;
-      }
-
-      return 1;
-    }
 
     // Touch input
     int32_t action = AMotionEvent_getAction(event);
@@ -644,11 +588,6 @@ static int32_t onInputEvent(struct android_app* app, AInputEvent* event) {
     if(keyCode==AKEYCODE_VOLUME_UP || keyCode==AKEYCODE_VOLUME_DOWN || keyCode==AKEYCODE_VOLUME_MUTE)
       return 0;
 
-    // Mark gamepad as connected if we get gamepad button input
-    if ((source & AINPUT_SOURCE_GAMEPAD) == AINPUT_SOURCE_GAMEPAD) {
-      g_gamepad.connected = true;
-    }
-
     AppEvent evt;
     evt.data.key.keyCode = keyCode;
     if (action == AKEY_EVENT_ACTION_DOWN) {
@@ -712,18 +651,6 @@ AndroidApi::AndroidApi() {
     { AKEYCODE_ENTER,        Event::K_Return   },
     { AKEYCODE_SPACE,        Event::K_Space    },
     { AKEYCODE_CAPS_LOCK,    Event::K_CapsLock },
-
-    // Gamepad buttons
-    { AKEYCODE_BUTTON_A,      Event::K_LAlt     },
-    { AKEYCODE_BUTTON_B,      Event::K_Space    },
-    { AKEYCODE_BUTTON_X,      Event::K_Return   },
-    { AKEYCODE_BUTTON_Y,      Event::K_Tab      },
-    { AKEYCODE_BUTTON_L1,     Event::K_Tab      },
-    { AKEYCODE_BUTTON_R1,     Event::K_F        },
-    { AKEYCODE_BUTTON_THUMBL, Event::K_CapsLock },
-    { AKEYCODE_BUTTON_THUMBR, Event::K_X        },
-    { AKEYCODE_BUTTON_START,  Event::K_ESCAPE   },
-    { AKEYCODE_BUTTON_SELECT, Event::K_B        },
 
     { AKEYCODE_F1,           Event::K_F1       },
     { AKEYCODE_0,            Event::K_0        },

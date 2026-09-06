@@ -8,10 +8,21 @@
 #include <cstdint>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace Tempest {
 
 struct GamepadState {
+  enum Button : uint32_t {
+    A=1u<<0, B=1u<<1, X=1u<<2, Y=1u<<3,
+    L1=1u<<4, R1=1u<<5, L3=1u<<6, R3=1u<<7,
+    Start=1u<<8, Select=1u<<9,
+    Up=1u<<10, Down=1u<<11, Left=1u<<12, Right=1u<<13,
+    L2=1u<<14, R2=1u<<15,
+    };
+  uint32_t buttons = 0;
+  // Ordered button snapshots since the previous poll preserve short taps and chords.
+  std::vector<uint32_t> buttonChanges;
   float leftStickX   = 0.0f;
   float leftStickY   = 0.0f;
   float rightStickX  = 0.0f;

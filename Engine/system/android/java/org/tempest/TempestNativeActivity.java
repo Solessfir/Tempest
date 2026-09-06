@@ -4,27 +4,41 @@ import android.app.NativeActivity;
 import android.content.pm.ActivityInfo;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
+import android.hardware.input.InputManager;
 import android.os.Bundle;
 import android.text.Editable;
 import android.text.InputType;
 import android.text.TextWatcher;
 import android.view.Gravity;
+import android.view.InputDevice;
+import android.view.KeyEvent;
+import android.view.MotionEvent;
 import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.EditText;
 import android.widget.FrameLayout;
 
-public class TempestNativeActivity extends NativeActivity {
+public class TempestNativeActivity extends NativeActivity implements InputManager.InputDeviceListener {
     private EditText textInput;
     private boolean synchronizingText;
+    private InputManager inputManager;
+    private int controllerId = -1;
+    private int controllerButtons;
+    private int controllerHat;
+    private final float[] controllerAxes = new float[6];
 
     private native void nativeSetText(String text);
     private native void nativeEditorAction();
+    private native void nativeGamepad(boolean connected, int buttons, float lx, float ly,
+                                      float rx, float ry, float lt, float rt);
 
     @Override
     protected void onCreate(Bundle state) {
         loadNativeLibrary();
         super.onCreate(state);
+        inputManager = getSystemService(InputManager.class);
+        inputManager.registerInputDeviceListener(this, null);
+        refreshController();
 
         textInput = new EditText(this);
         textInput.setSingleLine(true);
@@ -62,6 +76,136 @@ public class TempestNativeActivity extends NativeActivity {
             }
             return false;
         });
+    }
+
+    private static boolean isController(InputDevice device) {
+        return device != null && (device.supportsSource(InputDevice.SOURCE_GAMEPAD)
+                || device.supportsSource(InputDevice.SOURCE_JOYSTICK));
+    }
+
+    private void reportController() {
+        nativeGamepad(controllerId != -1, controllerButtons | controllerHat,
+                controllerAxes[0], controllerAxes[1], controllerAxes[2], controllerAxes[3],
+                controllerAxes[4], controllerAxes[5]);
+    }
+
+    private void resetController() {
+        controllerButtons = 0;
+        controllerHat = 0;
+        java.util.Arrays.fill(controllerAxes, 0);
+        reportController();
+    }
+
+    private void refreshController() {
+        if (isController(InputDevice.getDevice(controllerId)))
+            return;
+        controllerId = -1;
+        for (int id : InputDevice.getDeviceIds()) {
+            if (isController(InputDevice.getDevice(id))) {
+                controllerId = id;
+                break;
+            }
+        }
+        resetController();
+    }
+
+    @Override public void onInputDeviceAdded(int id) { refreshController(); }
+    @Override public void onInputDeviceRemoved(int id) { refreshController(); }
+    @Override public void onInputDeviceChanged(int id) { refreshController(); }
+
+    @Override
+    protected void onPause() {
+        resetController();
+        super.onPause();
+    }
+
+    @Override
+    public void onWindowFocusChanged(boolean focused) {
+        super.onWindowFocusChanged(focused);
+        if (!focused)
+            resetController();
+    }
+
+    @Override
+    protected void onDestroy() {
+        inputManager.unregisterInputDeviceListener(this);
+        controllerId = -1;
+        resetController();
+        super.onDestroy();
+    }
+
+    private static int controllerButton(int key) {
+        switch (key) {
+            case KeyEvent.KEYCODE_BUTTON_A: return 1 << 0;
+            case KeyEvent.KEYCODE_BUTTON_B: return 1 << 1;
+            case KeyEvent.KEYCODE_BUTTON_X: return 1 << 2;
+            case KeyEvent.KEYCODE_BUTTON_Y: return 1 << 3;
+            case KeyEvent.KEYCODE_BUTTON_L1: return 1 << 4;
+            case KeyEvent.KEYCODE_BUTTON_R1: return 1 << 5;
+            case KeyEvent.KEYCODE_BUTTON_THUMBL: return 1 << 6;
+            case KeyEvent.KEYCODE_BUTTON_THUMBR: return 1 << 7;
+            case KeyEvent.KEYCODE_BUTTON_START: return 1 << 8;
+            case KeyEvent.KEYCODE_BUTTON_SELECT: return 1 << 9;
+            case KeyEvent.KEYCODE_DPAD_UP: return 1 << 10;
+            case KeyEvent.KEYCODE_DPAD_DOWN: return 1 << 11;
+            case KeyEvent.KEYCODE_DPAD_LEFT: return 1 << 12;
+            case KeyEvent.KEYCODE_DPAD_RIGHT: return 1 << 13;
+            case KeyEvent.KEYCODE_BUTTON_L2: return 1 << 14;
+            case KeyEvent.KEYCODE_BUTTON_R2: return 1 << 15;
+            default: return 0;
+        }
+    }
+
+    @Override
+    public boolean dispatchKeyEvent(KeyEvent event) {
+        if (isController(event.getDevice())) {
+            int bit = controllerButton(event.getKeyCode());
+            if (bit != 0) {
+                if (event.getDeviceId() != controllerId)
+                    return true;
+                if (event.getAction() == KeyEvent.ACTION_DOWN)
+                    controllerButtons |= bit;
+                else if (event.getAction() == KeyEvent.ACTION_UP)
+                    controllerButtons &= ~bit;
+                reportController();
+                return true;
+            }
+        }
+        return super.dispatchKeyEvent(event);
+    }
+
+    private static float axis(MotionEvent event, int axis, int fallback) {
+        InputDevice device = event.getDevice();
+        InputDevice.MotionRange range = device.getMotionRange(axis, event.getSource());
+        if (range == null) {
+            axis = fallback;
+            range = device.getMotionRange(axis, event.getSource());
+        }
+        if (range == null)
+            return 0;
+        float value = event.getAxisValue(axis);
+        return Math.abs(value) <= range.getFlat() ? 0 : value;
+    }
+
+    @Override
+    public boolean dispatchGenericMotionEvent(MotionEvent event) {
+        if (event.isFromSource(InputDevice.SOURCE_JOYSTICK) && isController(event.getDevice())) {
+            if (event.getDeviceId() != controllerId)
+                return true;
+            controllerAxes[0] = axis(event, MotionEvent.AXIS_X, MotionEvent.AXIS_X);
+            controllerAxes[1] = axis(event, MotionEvent.AXIS_Y, MotionEvent.AXIS_Y);
+            controllerAxes[2] = axis(event, MotionEvent.AXIS_Z, MotionEvent.AXIS_RX);
+            controllerAxes[3] = axis(event, MotionEvent.AXIS_RZ, MotionEvent.AXIS_RY);
+            controllerAxes[4] = axis(event, MotionEvent.AXIS_LTRIGGER, MotionEvent.AXIS_BRAKE);
+            controllerAxes[5] = axis(event, MotionEvent.AXIS_RTRIGGER, MotionEvent.AXIS_GAS);
+            float hatX = event.getAxisValue(MotionEvent.AXIS_HAT_X);
+            float hatY = event.getAxisValue(MotionEvent.AXIS_HAT_Y);
+            controllerHat = (hatY < -0.5f ? 1 << 10 : 0) | (hatY > 0.5f ? 1 << 11 : 0)
+                    | (hatX < -0.5f ? 1 << 12 : 0) | (hatX > 0.5f ? 1 << 13 : 0);
+            reportController();
+            return true;
+        }
+        return super.dispatchGenericMotionEvent(event);
     }
 
     private void loadNativeLibrary() {
