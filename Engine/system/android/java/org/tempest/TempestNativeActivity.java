@@ -1,6 +1,8 @@
 package org.tempest;
 
 import android.app.NativeActivity;
+import android.content.pm.ApplicationInfo;
+import android.content.pm.PackageManager;
 import android.graphics.Color;
 import android.os.Bundle;
 import android.text.Editable;
@@ -21,6 +23,7 @@ public class TempestNativeActivity extends NativeActivity {
 
     @Override
     protected void onCreate(Bundle state) {
+        loadNativeLibrary();
         super.onCreate(state);
 
         textInput = new EditText(this);
@@ -59,6 +62,16 @@ public class TempestNativeActivity extends NativeActivity {
             }
             return false;
         });
+    }
+
+    private void loadNativeLibrary() {
+        try {
+            ApplicationInfo info = getPackageManager().getApplicationInfo(
+                    getPackageName(), PackageManager.GET_META_DATA);
+            System.loadLibrary(info.metaData.getString("android.app.lib_name"));
+        } catch (PackageManager.NameNotFoundException error) {
+            throw new IllegalStateException("Cannot read the NativeActivity library name", error);
+        }
     }
 
     public void showSoftInput(String text) {
