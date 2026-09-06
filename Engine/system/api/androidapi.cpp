@@ -386,8 +386,8 @@ static int32_t onInputEvent(struct android_app* app, AInputEvent* event) {
       g_gamepad.rightTrigger = rt;
       g_gamepad.connected   = true;
 
-      // Triggers are exposed as digital Gothic controls as well as analog
-      // state: RT is the primary action and LT is walk/modifier.
+      // Triggers are exposed as digital Gothic controls as well as analog state.
+      // RT is the primary action and LT is the walk modifier.
       static bool lastLt = false, lastRt = false;
       const bool nextLt = lt > 0.5f;
       const bool nextRt = rt > 0.5f;

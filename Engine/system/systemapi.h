@@ -71,8 +71,8 @@ class SystemApi {
     static void     takeOverlay(UiOverlay* ui);
 
     static GamepadState gamepadState();
-    /// Writable persistent directory owned by the application. Empty on
-    /// platforms that do not provide one through the windowing backend.
+    /// Writable persistent directory owned by the application.
+    /// Returns empty on platforms that do not provide one through the windowing backend.
     static std::string appDataPath();
 
   protected:

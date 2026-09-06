@@ -229,8 +229,8 @@ void VSwapchain::cleanupSurface() noexcept {
 void VSwapchain::reset() {
   cleanupSwapchain();
 #if defined(__ANDROID__)
-  // NativeActivity may replace its ANativeWindow after pause/resume. A Vulkan
-  // surface is tied to that exact window, so rebuild both objects on resize.
+  // NativeActivity may replace its ANativeWindow after pause/resume.
+  // Rebuild the Vulkan surface and swapchain because the surface is tied to that exact window.
   cleanupSurface();
   surface = createSurface(device.instance, hwnd);
 #endif
