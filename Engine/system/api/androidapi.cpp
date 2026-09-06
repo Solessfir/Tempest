@@ -587,9 +587,9 @@ AndroidApi::AndroidApi() {
 
     // Gamepad buttons
     { AKEYCODE_BUTTON_A,      Event::K_Return   },
-    { AKEYCODE_BUTTON_B,      Event::K_ESCAPE   },
-    { AKEYCODE_BUTTON_X,      Event::K_LAlt     },
-    { AKEYCODE_BUTTON_Y,      Event::K_Space    },
+    { AKEYCODE_BUTTON_B,      Event::K_LAlt     },
+    { AKEYCODE_BUTTON_X,      Event::K_Space    },
+    { AKEYCODE_BUTTON_Y,      Event::K_Tab      },
     { AKEYCODE_BUTTON_L1,     Event::K_Tab      },
     { AKEYCODE_BUTTON_R1,     Event::K_F        },
     { AKEYCODE_BUTTON_THUMBL, Event::K_CapsLock },
