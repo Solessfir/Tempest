@@ -289,7 +289,11 @@ void VSwapchain::createSwapchain(VDevice& device) {
       auto     support  = device.querySwapChainSupport(surface);
       uint32_t imgCount = findImageCount(support);
       auto     code     = createSwapchain(device,support,rect,imgCount);
+#if defined(__ANDROID__)
+      if(code==VK_ERROR_OUT_OF_DATE_KHR) {
+#else
       if(code==VK_ERROR_OUT_OF_DATE_KHR || code==VK_SUBOPTIMAL_KHR) {
+#endif
         cleanupSwapchain();
         continue;
         }
@@ -333,7 +337,14 @@ VkResult VSwapchain::createSwapchain(VDevice& device, const SwapChainSupport& sw
     createInfo.imageSharingMode      = VK_SHARING_MODE_EXCLUSIVE;
     }
 
+#if defined(__ANDROID__)
+  if((swapChainSupport.capabilities.supportedTransforms & VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR)!=0)
+    createInfo.preTransform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
+  else
+    createInfo.preTransform = swapChainSupport.capabilities.currentTransform;
+#else
   createInfo.preTransform   = swapChainSupport.capabilities.currentTransform;
+#endif
   createInfo.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
   createInfo.presentMode    = presentMode;
   createInfo.clipped        = VK_FALSE;
@@ -452,10 +463,19 @@ uint32_t VSwapchain::findImageCount(const SwapChainSupport& support) const {
 void VSwapchain::acquireNextImage() {
   VkResult code = implAcquireNextImage();
 
-  if(code==VK_ERROR_OUT_OF_DATE_KHR || code==VK_SUBOPTIMAL_KHR)
+  if(code==VK_ERROR_OUT_OF_DATE_KHR)
     throw SwapchainSuboptimal();
 
+#if !defined(__ANDROID__)
+  if(code==VK_SUBOPTIMAL_KHR)
+    throw SwapchainSuboptimal();
+#endif
+
+#if defined(__ANDROID__)
+  if(code!=VK_SUCCESS && code!=VK_SUBOPTIMAL_KHR)
+#else
   if(code!=VK_SUCCESS)
+#endif
     vkAssert(code);
   }
 
@@ -544,8 +564,12 @@ void VSwapchain::present() {
 
   auto tx = Application::tickCount();
   VkResult code = device.presentQueue->present(presentInfo);
-  if(code==VK_ERROR_OUT_OF_DATE_KHR || code==VK_SUBOPTIMAL_KHR)
+  if(code==VK_ERROR_OUT_OF_DATE_KHR)
     throw SwapchainSuboptimal();
+#if !defined(__ANDROID__)
+  if(code==VK_SUBOPTIMAL_KHR)
+    throw SwapchainSuboptimal();
+#endif
   tx = Application::tickCount()-tx;
   if(tx > 2) {
     // std::chrono::system_clock::time_point p = std::chrono::system_clock::now();
@@ -555,7 +579,12 @@ void VSwapchain::present() {
     // Log::i(str," : vkQueuePresentKHR[",imgIndex,"] = ", tx);
     }
 
+#if defined(__ANDROID__)
+  if(code!=VK_SUBOPTIMAL_KHR)
+    Detail::vkAssert(code);
+#else
   Detail::vkAssert(code);
+#endif
   acquireNextImage();
   }
 
