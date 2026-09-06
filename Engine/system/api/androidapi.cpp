@@ -231,6 +231,24 @@ static bool popEvent(AppEvent& evt) {
   return true;
 }
 
+static void useMusicVolumeControls() {
+  if(g_app==nullptr || g_app->activity==nullptr)
+    return;
+
+  JNIEnv* env = nullptr;
+  g_app->activity->vm->AttachCurrentThread(&env,nullptr);
+  if(env==nullptr)
+    return;
+
+  jclass activityClass = env->GetObjectClass(g_app->activity->clazz);
+  if(activityClass!=nullptr) {
+    jmethodID setVolumeControlStream = env->GetMethodID(activityClass,"setVolumeControlStream","(I)V");
+    if(setVolumeControlStream!=nullptr)
+      env->CallVoidMethod(g_app->activity->clazz,setVolumeControlStream,3);
+    }
+  g_app->activity->vm->DetachCurrentThread();
+  }
+
 // Handle application lifecycle commands
 static void onAppCmd(struct android_app* app, int32_t cmd) {
   switch (cmd) {
@@ -586,14 +604,14 @@ AndroidApi::AndroidApi() {
     { AKEYCODE_CAPS_LOCK,    Event::K_CapsLock },
 
     // Gamepad buttons
-    { AKEYCODE_BUTTON_A,      Event::K_Return   },
-    { AKEYCODE_BUTTON_B,      Event::K_LAlt     },
-    { AKEYCODE_BUTTON_X,      Event::K_Space    },
+    { AKEYCODE_BUTTON_A,      Event::K_LAlt     },
+    { AKEYCODE_BUTTON_B,      Event::K_Space    },
+    { AKEYCODE_BUTTON_X,      Event::K_Return   },
     { AKEYCODE_BUTTON_Y,      Event::K_Tab      },
     { AKEYCODE_BUTTON_L1,     Event::K_Tab      },
     { AKEYCODE_BUTTON_R1,     Event::K_F        },
     { AKEYCODE_BUTTON_THUMBL, Event::K_CapsLock },
-    { AKEYCODE_BUTTON_THUMBR, Event::K_R        },
+    { AKEYCODE_BUTTON_THUMBR, Event::K_X        },
     { AKEYCODE_BUTTON_START,  Event::K_ESCAPE   },
     { AKEYCODE_BUTTON_SELECT, Event::K_B        },
 
@@ -790,6 +808,7 @@ void tempest_android_main(struct android_app* app) {
   g_app = app;
   app->onAppCmd     = onAppCmd;
   app->onInputEvent = onInputEvent;
+  useMusicVolumeControls();
 
   // Wait for window to be ready
   while (!g_hasWindow.load()) {
