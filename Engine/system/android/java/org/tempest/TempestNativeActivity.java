@@ -171,6 +171,19 @@ public class TempestNativeActivity extends NativeActivity implements InputManage
                 return true;
             }
         }
+        if (textInput != null && textInput.hasFocus()) {
+            int key = event.getKeyCode();
+            // Keep the Java editor authoritative while the IME is open.
+            // NativeActivity must not consume deletion before EditText updates its buffer.
+            if (key == KeyEvent.KEYCODE_ENTER) {
+                if (event.getAction() == KeyEvent.ACTION_UP)
+                    nativeEditorAction();
+                return true;
+            }
+            if (key != KeyEvent.KEYCODE_BACK && key != KeyEvent.KEYCODE_VOLUME_UP
+                    && key != KeyEvent.KEYCODE_VOLUME_DOWN && key != KeyEvent.KEYCODE_VOLUME_MUTE)
+                return textInput.dispatchKeyEvent(event);
+        }
         return super.dispatchKeyEvent(event);
     }
 
@@ -222,11 +235,11 @@ public class TempestNativeActivity extends NativeActivity implements InputManage
         runOnUiThread(() -> {
             synchronizingText = true;
             textInput.setText(text);
-            textInput.setSelection(textInput.length());
             synchronizingText = false;
             textInput.setFocusableInTouchMode(true);
             textInput.setFocusable(true);
             textInput.requestFocus();
+            textInput.selectAll();
 
             InputMethodManager keyboard = getSystemService(InputMethodManager.class);
             keyboard.restartInput(textInput);
