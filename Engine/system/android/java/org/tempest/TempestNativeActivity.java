@@ -32,6 +32,7 @@ public class TempestNativeActivity extends NativeActivity {
         textInput.setCursorVisible(false);
         textInput.setAlpha(0.01f);
         textInput.setPadding(0, 0, 0, 0);
+        textInput.setFocusable(false);
 
         FrameLayout.LayoutParams layout = new FrameLayout.LayoutParams(1, 1, Gravity.BOTTOM | Gravity.LEFT);
         addContentView(textInput, layout);
@@ -66,6 +67,8 @@ public class TempestNativeActivity extends NativeActivity {
             textInput.setText(text);
             textInput.setSelection(textInput.length());
             synchronizingText = false;
+            textInput.setFocusableInTouchMode(true);
+            textInput.setFocusable(true);
             textInput.requestFocus();
 
             InputMethodManager keyboard = getSystemService(InputMethodManager.class);
@@ -79,6 +82,7 @@ public class TempestNativeActivity extends NativeActivity {
             InputMethodManager keyboard = getSystemService(InputMethodManager.class);
             keyboard.hideSoftInputFromWindow(textInput.getWindowToken(), 0);
             textInput.clearFocus();
+            textInput.setFocusable(false);
         });
     }
 }
