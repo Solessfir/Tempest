@@ -1,7 +1,7 @@
 package org.tempest;
 
 import android.app.NativeActivity;
-import android.content.pm.ApplicationInfo;
+import android.content.pm.ActivityInfo;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
 import android.os.Bundle;
@@ -66,8 +66,8 @@ public class TempestNativeActivity extends NativeActivity {
 
     private void loadNativeLibrary() {
         try {
-            ApplicationInfo info = getPackageManager().getApplicationInfo(
-                    getPackageName(), PackageManager.GET_META_DATA);
+            ActivityInfo info = getPackageManager().getActivityInfo(
+                    getComponentName(), PackageManager.GET_META_DATA);
             System.loadLibrary(info.metaData.getString("android.app.lib_name"));
         } catch (PackageManager.NameNotFoundException error) {
             throw new IllegalStateException("Cannot read the NativeActivity library name", error);
