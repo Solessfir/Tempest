@@ -8,6 +8,7 @@
 #include <android_native_app_glue.h>
 #include <android/native_activity.h>
 #include <android/native_window.h>
+#include <android/window.h>
 #include <android/input.h>
 #include <android/looper.h>
 #include <android/log.h>
