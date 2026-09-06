@@ -109,6 +109,10 @@ static void drawFrame();
           }
       return -1;
       }
+
+    void clear() {
+      touch.clear();
+      }
     };
   TouchState touch;
   }
@@ -197,7 +201,27 @@ static void drawFrame();
     swapContext();
     }
   }
+
+- (void)touchesCancelled:(NSSet *)touches withEvent:(UIEvent *)ex {
+  [self touchesEnded:touches withEvent:ex];
+  }
 @end
+
+static void discardPendingEvent(TempestWindow* window) {
+  switch(window->curentEvent) {
+    case Event::Resize:
+      window->event.size.~SizeEvent();
+      break;
+    case Event::MouseDown:
+    case Event::MouseMove:
+    case Event::MouseUp:
+      window->event.mouse.~MouseEvent();
+      break;
+    default:
+      break;
+    }
+  window->curentEvent = Event::NoEvent;
+  }
 
 static TempestWindow* mainWindow = nullptr;
 
@@ -211,11 +235,14 @@ static TempestWindow* mainWindow = nullptr;
   }
 
 -(id)init {
-  fullScreen = true;
+  self = [super init];
+  if(self!=nil)
+    fullScreen = true;
   return self;
   }
 
 - (void)viewDidLoad {
+  [super viewDidLoad];
   self.extendedLayoutIncludesOpaqueBars = YES;
   //self.modalPresentationStyle = UIModalPresentationFullScreen;
   //[self setNeedsStatusBarAppearanceUpdate];
@@ -240,8 +267,8 @@ static TempestWindow* mainWindow = nullptr;
   return UIInterfaceOrientationMaskAll;
   }
 
--(bool)setAsFullscreen: (bool)fullScreen {
-  self->fullScreen = fullScreen;
+-(bool)setAsFullscreen: (bool)value {
+  self->fullScreen = value;
   [self setNeedsStatusBarAppearanceUpdate];
   return true;
   }
@@ -265,7 +292,9 @@ static bool isApplicationActive = false;
   CGRect frame = [ [ UIScreen mainScreen ] bounds ];
   TempestWindow  * window = [ [ TempestWindow alloc ] initWithFrame: frame];
   window.contentScaleFactor = [UIScreen mainScreen].scale;
-  window.rootViewController = [ViewController new];
+  ViewController* controller = [ViewController new];
+  [window setRootViewController:controller];
+  [controller release];
   window.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
   window.backgroundColor = [ UIColor blackColor ];
 
@@ -398,6 +427,13 @@ SystemApi::Window *iOSApi::implCreateWindow(Tempest::Window *owner, SystemApi::S
   }
 
 void iOSApi::implDestroyWindow(SystemApi::Window *w) {
+  auto wx = reinterpret_cast<TempestWindow*>(w);
+  wx->owner = nullptr;
+  wx->hasPendingFrame.store(false);
+  [wx->displayLink invalidate];
+  wx->displayLink = nil;
+  discardPendingEvent(wx);
+  wx->touch.clear();
   }
 
 void iOSApi::implExit() {
