@@ -42,11 +42,12 @@ class EventDispatcher final {
     void                         implSetMouseOver(const std::shared_ptr<Widget::Ref>& s, MouseEvent& orig);
     void                         implExcMouseOver(Widget *w, Widget *old);
     void                         handleModKey(const KeyEvent& e);
+    static uint64_t              mouseCaptureKey(int mouseId, Event::MouseButton button);
 
     std::shared_ptr<Widget::Ref> lock(std::weak_ptr<Widget::Ref>& w);
 
     Widget*                      customRoot = nullptr;
-    std::weak_ptr<Widget::Ref>   mouseUp[Event::MouseButton::ButtonLast];
+    std::unordered_map<uint64_t,std::weak_ptr<Widget::Ref>> mouseUp;
     std::weak_ptr<Widget::Ref>   mouseLast;
     std::weak_ptr<Widget::Ref>   mouseOver;
 

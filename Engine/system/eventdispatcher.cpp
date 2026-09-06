@@ -27,7 +27,7 @@ void EventDispatcher::dispatchMouseDown(Widget& wnd, MouseEvent &e) {
                  Event::MouseDown );
   e1.ignore();
 
-  auto& btn = mouseUp[e.button];
+  auto& btn = mouseUp[mouseCaptureKey(e.mouseID,e.button)];
   for(auto i:overlays) {
     if(!i->bind(wnd))
       continue;
@@ -64,8 +64,12 @@ void EventDispatcher::dispatchMouseDown(Widget& wnd, MouseEvent &e) {
 void EventDispatcher::dispatchMouseUp(Widget& /*wnd*/, MouseEvent &e) {
   ++mouseEvCount;
 
-  auto ptr = mouseUp[e.button];
-  mouseUp[e.button].reset();
+  const auto key = mouseCaptureKey(e.mouseID,e.button);
+  auto       it  = mouseUp.find(key);
+  if(it==mouseUp.end())
+    return;
+  auto ptr = it->second;
+  mouseUp.erase(it);
 
   if(auto w = ptr.lock()) {
     auto p = e.pos() - w->widget->mapToRoot(Point());
@@ -81,40 +85,52 @@ void EventDispatcher::dispatchMouseUp(Widget& /*wnd*/, MouseEvent &e) {
   }
 
 void EventDispatcher::dispatchMouseMove(Widget& wnd, MouseEvent &e) {
-  auto btn = Event::ButtonNone;
-  for(uint8_t i=0; i<Event::ButtonLast; ++i)
-    if(!mouseUp[i].expired()) {
-      btn = Event::MouseButton(i);
-      break;
+  auto btn = e.button;
+  auto key = mouseCaptureKey(e.mouseID,btn);
+  auto it  = mouseUp.find(key);
+  if(btn==Event::ButtonNone) {
+    for(uint8_t i=0; i<Event::ButtonLast; ++i) {
+      auto candidate = mouseUp.find(mouseCaptureKey(e.mouseID,Event::MouseButton(i)));
+      if(candidate!=mouseUp.end() && !candidate->second.expired()) {
+        btn = Event::MouseButton(i);
+        key = candidate->first;
+        it  = candidate;
+        break;
+        }
       }
-
-  if(auto w = lock(mouseUp[btn])) {
-    auto p = e.pos() - w->widget->mapToRoot(Point());
-    MouseEvent e0( p.x,
-                   p.y,
-                   btn,
-                   mkModifier(),
-                   e.delta,
-                   e.mouseID,
-                   Event::MouseDrag  );
-    w->widget->mouseDragEvent(e0);
-    if(e0.isAccepted())
-      return;
     }
 
-  if(auto w = lock(mouseUp[btn])) {
-    auto p = e.pos() - w->widget->mapToRoot(Point());
-    MouseEvent e1( p.x,
-                   p.y,
-                   btn,
-                   e.modifier,
-                   e.delta,
-                   e.mouseID,
-                   Event::MouseMove  );
-    w->widget->mouseMoveEvent(e1);
-    if(e.isAccepted()) {
-      implSetMouseOver(mouseUp[btn].lock(),e);
-      return;
+  if(it!=mouseUp.end()) {
+    if(auto w = lock(it->second)) {
+      auto p = e.pos() - w->widget->mapToRoot(Point());
+      MouseEvent e0( p.x,
+                     p.y,
+                     btn,
+                     mkModifier(),
+                     e.delta,
+                     e.mouseID,
+                     Event::MouseDrag  );
+      w->widget->mouseDragEvent(e0);
+      if(e0.isAccepted())
+        return;
+      }
+    }
+
+  if(it!=mouseUp.end()) {
+    if(auto w = lock(it->second)) {
+      auto p = e.pos() - w->widget->mapToRoot(Point());
+      MouseEvent e1( p.x,
+                     p.y,
+                     btn,
+                     e.modifier,
+                     e.delta,
+                     e.mouseID,
+                     Event::MouseMove  );
+      w->widget->mouseMoveEvent(e1);
+      if(e.isAccepted()) {
+        implSetMouseOver(it->second.lock(),e);
+        return;
+        }
       }
     }
 
@@ -136,6 +152,10 @@ void EventDispatcher::dispatchMouseMove(Widget& wnd, MouseEvent &e) {
     }
   auto wptr = implDispatch(wnd,e1);
   implSetMouseOver(wptr,e1);
+  }
+
+uint64_t EventDispatcher::mouseCaptureKey(int mouseId, Event::MouseButton button) {
+  return (uint64_t(uint32_t(mouseId))<<32) | uint32_t(button);
   }
 
 void EventDispatcher::dispatchMouseWheel(Widget& wnd, MouseEvent &e) {
