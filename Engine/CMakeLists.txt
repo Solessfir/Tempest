@@ -177,7 +177,16 @@ if(TEMPEST_BUILD_VULKAN)
   add_definitions(-DVULKAN_HPP_NO_SMART_HANDLE)
 
   if(ANDROID)
-    # Android NDK provides Vulkan headers and library
+    # The NDK Vulkan headers can lag extensions referenced by Tempest.
+    # Use a pinned Khronos header release while continuing to link Android's loader.
+    include(FetchContent)
+    FetchContent_Declare(TempestVulkanHeaders
+        URL "https://github.com/KhronosGroup/Vulkan-Headers/archive/refs/tags/vulkan-sdk-1.4.357.0.zip"
+        URL_HASH SHA256=BC7925A17854A9BAC9433309E8DF88A701EF1D49D2020FFF6DB9407B637EA840)
+    FetchContent_MakeAvailable(TempestVulkanHeaders)
+    target_include_directories(${PROJECT_NAME} BEFORE PRIVATE
+        "${tempestvulkanheaders_SOURCE_DIR}/include")
+
     target_link_libraries(${PROJECT_NAME} PRIVATE vulkan)
   else()
     if("${CMAKE_SIZEOF_VOID_P}" EQUAL "8")
