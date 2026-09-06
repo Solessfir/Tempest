@@ -191,11 +191,20 @@ bool VSwapchain::checkPresentSupport(VkPhysicalDevice device, uint32_t queueFami
   }
 
 void VSwapchain::cleanupSwapchain() noexcept {
+#if defined(__ANDROID__)
+  Tempest::Log::i("Android swapchain cleanup: waiting for acquire fences");
+#endif
   // aquire is not a 'true' queue operation - have to wait explicitly on it
   aquireFence.waitAll();
+#if defined(__ANDROID__)
+  Tempest::Log::i("Android swapchain cleanup: waiting for the present queue");
+#endif
   // wait for vkQueuePresent to finish, so we can delete semaphores
   // NOTE: maybe update to VK_KHR_present_wait ?
   device.presentQueue->waitIdle();
+#if defined(__ANDROID__)
+  Tempest::Log::i("Android swapchain cleanup: destroying resources");
+#endif
   aquireFence  = FenceList();
   presentFence = FenceList();
   aquireSem    = SemaphoreList();
@@ -227,6 +236,9 @@ void VSwapchain::cleanupSurface() noexcept {
   }
 
 void VSwapchain::reset() {
+#if defined(__ANDROID__)
+  Tempest::Log::i("Android swapchain reset: started");
+#endif
   cleanupSwapchain();
 #if defined(__ANDROID__)
   // NativeActivity may replace its ANativeWindow after pause/resume.
@@ -235,6 +247,9 @@ void VSwapchain::reset() {
   surface = createSurface(device.instance, hwnd);
 #endif
   createSwapchain(device);
+#if defined(__ANDROID__)
+  Tempest::Log::i("Android swapchain reset: completed");
+#endif
   }
 
 void VSwapchain::cleanup() noexcept {
