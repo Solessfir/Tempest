@@ -534,6 +534,10 @@ static int32_t onInputEvent(struct android_app* app, AInputEvent* event) {
     int32_t action  = AKeyEvent_getAction(event);
     int32_t keyCode = AKeyEvent_getKeyCode(event);
 
+    // Leave volume keys to Android so it can adjust the activity's music stream.
+    if(keyCode==AKEYCODE_VOLUME_UP || keyCode==AKEYCODE_VOLUME_DOWN || keyCode==AKEYCODE_VOLUME_MUTE)
+      return 0;
+
     // Mark gamepad as connected if we get gamepad button input
     if ((source & AINPUT_SOURCE_GAMEPAD) == AINPUT_SOURCE_GAMEPAD) {
       g_gamepad.connected = true;
