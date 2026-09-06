@@ -829,6 +829,19 @@ int AndroidApi::implExec(AppCallBack& cb) {
 }
 
 void AndroidApi::implProcessEvents(AppCallBack& cb) {
+  // Modal Tempest dialogs run their own event loop.
+  // Keep Android input and lifecycle events moving while that loop is active.
+  int events = 0;
+  struct android_poll_source* source = nullptr;
+  while(ALooper_pollOnce(0,nullptr,&events,reinterpret_cast<void**>(&source))>=0) {
+    if(source!=nullptr)
+      source->process(g_app,source);
+    if(g_app->destroyRequested!=0) {
+      g_isRunning.store(false);
+      return;
+      }
+    }
+
   if (g_mainWindow == nullptr || g_mainWindow->owner == nullptr)
     return;
 
