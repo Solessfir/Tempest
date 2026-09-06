@@ -3,6 +3,9 @@
 #include "vcommandbuffer.h"
 
 #include <Tempest/Attachment>
+#include <Tempest/Log>
+
+#include "utility/gputimestamp.h"
 
 #include "vdevice.h"
 #include "vcommandpool.h"
@@ -164,6 +167,8 @@ VCommandBuffer::VCommandBuffer(VDevice& device, VkCommandPoolCreateFlags flags)
   }
 
 VCommandBuffer::~VCommandBuffer() {
+  if(profilePool!=VK_NULL_HANDLE)
+    vkDestroyQueryPool(device.device.impl,profilePool,nullptr);
   if(impl!=nullptr) {
     vkFreeCommandBuffers(device.device.impl,pool.impl,1,&impl);
     }
@@ -182,6 +187,8 @@ VCommandBuffer::~VCommandBuffer() {
   }
 
 void VCommandBuffer::reset() {
+  profileComplete = false;
+  profileLabels.clear();
   vkAssert(vkResetCommandPool(device.device.impl,pool.impl,0));
 
   SmallArray<VkCommandBuffer,MaxCmdChunks> flat(chunks.size());
@@ -225,6 +232,13 @@ void VCommandBuffer::begin(SyncHint hint) {
     beginInfo.pInheritanceInfo = nullptr;
     vkAssert(vkBeginCommandBuffer(impl,&beginInfo));
     }
+  profileComplete = false;
+  profileLabels.clear();
+  if(profileRequested && profilePool!=VK_NULL_HANDLE) {
+    vkCmdResetQueryPool(impl,profilePool,0,MaxProfileQueries);
+    vkCmdWriteTimestamp(impl,VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,profilePool,0);
+    profileLabels.emplace_back("Unmarked");
+    }
   }
 
 void VCommandBuffer::begin() {
@@ -238,6 +252,10 @@ void VCommandBuffer::end() {
     }
   swapchainSync.reserve(swapchainSync.size());
   resState.finalize(*this);
+  if(!profileLabels.empty()) {
+    vkCmdWriteTimestamp(impl,VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,profilePool,uint32_t(profileLabels.size()));
+    profileComplete = true;
+    }
   state = NoRecording;
 
   pushChunk();
@@ -729,6 +747,15 @@ void VCommandBuffer::setScissor(const Rect& r) {
   }
 
 void VCommandBuffer::setDebugMarker(std::string_view tag) {
+  if(!profileLabels.empty()) {
+    if(profileLabels.size()<MaxProfileQueries-1) {
+      vkCmdWriteTimestamp(impl,VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,profilePool,uint32_t(profileLabels.size()));
+      profileLabels.emplace_back(tag.empty() ? std::string_view("Unmarked") : tag);
+      } else {
+      // Reserve the last query for end(), even if a client emits too many markers.
+      profileLabels.back() = "[marker limit]";
+      }
+    }
   if(isDbgRegion) {
     device.vkCmdDebugMarkerEnd(impl);
     isDbgRegion = false;
@@ -743,6 +770,68 @@ void VCommandBuffer::setDebugMarker(std::string_view tag) {
     device.vkCmdDebugMarkerBegin(impl, &info);
     isDbgRegion = true;
     }
+  }
+
+void VCommandBuffer::setGpuProfilingEnabled(bool enabled) {
+  profileRequested = enabled;
+  if(!enabled || profileInitialized)
+    return;
+  profileInitialized = true;
+
+  VkPhysicalDeviceProperties props = {};
+  vkGetPhysicalDeviceProperties(device.physicalDevice,&props);
+  timestampPeriod = props.limits.timestampPeriod;
+  uint32_t count = 0;
+  vkGetPhysicalDeviceQueueFamilyProperties(device.physicalDevice,&count,nullptr);
+  std::vector<VkQueueFamilyProperties> queues(count);
+  vkGetPhysicalDeviceQueueFamilyProperties(device.physicalDevice,&count,queues.data());
+  if(device.props.graphicsFamily<count)
+    timestampValidBits = queues[device.props.graphicsFamily].timestampValidBits;
+  if(timestampValidBits==0 || timestampValidBits>64 || timestampPeriod<=0) {
+    Log::i("GPU profiling unavailable: graphics queue has no timestamp support");
+    return;
+    }
+
+  VkQueryPoolCreateInfo info = {};
+  info.sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO;
+  info.queryType = VK_QUERY_TYPE_TIMESTAMP;
+  info.queryCount = MaxProfileQueries;
+  const auto result = vkCreateQueryPool(device.device.impl,&info,nullptr,&profilePool);
+  if(result!=VK_SUCCESS) {
+    profilePool = VK_NULL_HANDLE;
+    Log::i("GPU profiling unavailable: vkCreateQueryPool returned ",int(result));
+    return;
+    }
+  profileLabels.reserve(MaxProfileQueries-1);
+  }
+
+std::vector<AbstractGraphicsApi::GpuTiming> VCommandBuffer::gpuTimings() const {
+  if(!profileComplete || profileLabels.empty() || isRecording())
+    return {};
+
+  struct Result {
+    uint64_t ticks = 0;
+    uint64_t available = 0;
+    };
+  Result values[MaxProfileQueries] = {};
+  const auto count = uint32_t(profileLabels.size()+1);
+  const auto result = vkGetQueryPoolResults(device.device.impl,profilePool,0,count,
+                                          size_t(count)*sizeof(Result),values,sizeof(Result),
+                                          VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WITH_AVAILABILITY_BIT);
+  // Never stall rendering to retrieve profiling data.
+  if(result!=VK_SUCCESS)
+    return {};
+  for(uint32_t i=0; i<count; ++i)
+    if(values[i].available==0)
+      return {};
+
+  std::vector<AbstractGraphicsApi::GpuTiming> ret;
+  ret.reserve(profileLabels.size());
+  for(size_t i=0; i<profileLabels.size(); ++i) {
+    const auto ticks = gpuTimestampDelta(values[i].ticks,values[i+1].ticks,timestampValidBits);
+    ret.push_back({profileLabels[i],double(ticks)*double(timestampPeriod)/1e6});
+    }
+  return ret;
   }
 
 void VCommandBuffer::copy(AbstractGraphicsApi::Buffer& dstBuf, size_t offsetDest, const AbstractGraphicsApi::Buffer &srcBuf, size_t offsetSrc, size_t size) {
