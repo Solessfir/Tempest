@@ -711,9 +711,7 @@ void AndroidApi::implProcessEvents(AppCallBack& cb) {
     switch (evt.type) {
       case AppEvent::Resize: {
         SizeEvent e(evt.data.resize.w, evt.data.resize.h);
-        LOGI("Dispatching resize: %dx%d", evt.data.resize.w, evt.data.resize.h);
         AndroidApi::dispatchResize(wnd, e, true);
-        LOGI("Resize dispatch completed");
         break;
       }
 
