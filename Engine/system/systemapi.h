@@ -21,8 +21,15 @@ struct GamepadState {
     L2=1u<<14, R2=1u<<15,
     };
   uint32_t buttons = 0;
-  // Ordered button snapshots since the previous poll preserve short taps and chords.
-  std::vector<uint32_t> buttonChanges;
+    struct Sample {
+      uint32_t buttons = 0;
+      float leftStickX = 0, leftStickY = 0;
+      float rightStickX = 0, rightStickY = 0;
+      float leftTrigger = 0, rightTrigger = 0;
+      };
+    // Keep analog triggers in the same ordered stream as buttons for modifier chords.
+    std::vector<Sample> changes;
+    bool overflow = false;
   float leftStickX   = 0.0f;
   float leftStickY   = 0.0f;
   float rightStickX  = 0.0f;

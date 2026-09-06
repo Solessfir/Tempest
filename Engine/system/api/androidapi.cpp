@@ -124,7 +124,8 @@ static std::mutex g_gamepadMutex;
 GamepadState AndroidApi::implGamepadState() {
   std::lock_guard<std::mutex> guard(g_gamepadMutex);
   auto state = g_gamepad;
-  g_gamepad.buttonChanges.clear();
+  g_gamepad.changes.clear();
+  g_gamepad.overflow = false;
   return state;
 }
 
@@ -134,10 +135,13 @@ Java_org_tempest_TempestNativeActivity_nativeGamepad(JNIEnv*, jobject, jboolean 
                                                    jfloat rx, jfloat ry, jfloat lt, jfloat rt) {
   std::lock_guard<std::mutex> guard(g_gamepadMutex);
   const auto next = uint32_t(buttons);
-  if(next!=g_gamepad.buttons) {
-    if(g_gamepad.buttonChanges.size()>=256)
-      g_gamepad.buttonChanges.clear();
-    g_gamepad.buttonChanges.push_back(next);
+  if(next!=g_gamepad.buttons || lt!=g_gamepad.leftTrigger || rt!=g_gamepad.rightTrigger ||
+     lx!=g_gamepad.leftStickX || ly!=g_gamepad.leftStickY || rx!=g_gamepad.rightStickX || ry!=g_gamepad.rightStickY) {
+    if(g_gamepad.changes.size()>=256) {
+      g_gamepad.changes.clear();
+      g_gamepad.overflow = true;
+      }
+    g_gamepad.changes.push_back({next,lx,ly,rx,ry,lt,rt});
     }
   g_gamepad.buttons = next;
   g_gamepad.connected = connected;
