@@ -16,6 +16,9 @@
 
 #include <Tempest/Window>
 #include <Tempest/Event>
+#if defined(TEMPEST_BUILD_AUDIO)
+#include <Tempest/SoundDevice>
+#endif
 
 #include <string>
 #include <vector>
@@ -289,6 +292,10 @@ static void onAppCmd(struct android_app* app, int32_t cmd) {
     case APP_CMD_RESUME:
       g_isResumed = true;
       g_isActive.store(g_isResumed && g_hasFocus);
+      ANativeActivity_setWindowFlags(app->activity, AWINDOW_FLAG_KEEP_SCREEN_ON, 0);
+#if defined(TEMPEST_BUILD_AUDIO)
+      SoundDevice::resumeAll();
+#endif
       enableImmersiveMode();  // Re-enable immersive mode on resume
       LOGI("App resumed");
       break;
@@ -296,6 +303,10 @@ static void onAppCmd(struct android_app* app, int32_t cmd) {
     case APP_CMD_PAUSE:
       g_isResumed = false;
       g_isActive.store(false);
+#if defined(TEMPEST_BUILD_AUDIO)
+      SoundDevice::pauseAll();
+#endif
+      ANativeActivity_setWindowFlags(app->activity, 0, AWINDOW_FLAG_KEEP_SCREEN_ON);
       LOGI("App paused");
       break;
 
