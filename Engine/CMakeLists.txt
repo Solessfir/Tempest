@@ -342,7 +342,7 @@ add_custom_target(shaders
 target_include_directories(${PROJECT_NAME} PRIVATE "${PROJECT_BINARY_DIR}/sprv")
 add_dependencies(${PROJECT_NAME} shaders)
 
-file(GLOB_RECURSE SOURCES
+file(GLOB_RECURSE SOURCES CONFIGURE_DEPENDS
   "2d/*.h"
   "2d/*.cpp"
   "exceptions/*.h"
@@ -378,7 +378,7 @@ endif()
 
 # FIXME: the headers include some SOURCES files so installing them is useless
 # the files in include should be the headers themselves!
-file(GLOB_RECURSE PUB_HEADERS "include/Tempest/**")
+file(GLOB_RECURSE PUB_HEADERS CONFIGURE_DEPENDS "include/Tempest/**")
 
 ### Sources
 target_sources(${PROJECT_NAME} PRIVATE ${GEN_SHADERS_HEADER} ${SOURCES} ${ObjCSOURCES})

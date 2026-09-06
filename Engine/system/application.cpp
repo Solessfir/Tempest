@@ -1,6 +1,7 @@
 #include "application.h"
 
 #include <Tempest/SystemApi>
+#include <Tempest/CpuTrace>
 #include <Tempest/Timer>
 #include <Tempest/Style>
 #include <Tempest/Font>
@@ -86,6 +87,7 @@ Application::~Application(){
   }
 
 void Application::sleep(uint32_t msecIn) {
+  CpuTrace trace("Tempest::sleep");
   const auto     start         = std::chrono::steady_clock::now();
   const auto     wtime         = std::chrono::milliseconds(msecIn);
   const uint32_t wtGranularity = 5;
