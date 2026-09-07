@@ -26,7 +26,8 @@ void checkChunks() {
   // Reusing the same buffer exercises reset; leaving the scope exercises destruction.
   for(int repeat=0;repeat<2;++repeat) {
     auto cmd=device.commandBuffer();
-    for(size_t count : {size_t(1),size_t(32),size_t(33),size_t(64),size_t(65),size_t(97),size_t(1)}) {
+    const size_t finalCount=repeat==0 ? 1 : 97;
+    for(size_t count : {size_t(1),size_t(32),size_t(33),size_t(64),size_t(65),size_t(97),finalCount}) {
       {
       auto enc=cmd.startEncoding(device);
       for(size_t i=0;i<count;++i) {
