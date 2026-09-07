@@ -6,6 +6,7 @@
 #include <Tempest/SystemApi>
 #include <Tempest/Platform>
 #include <Tempest/Log>
+#include <cstring>
 
 #include "vdevice.h"
 
@@ -374,6 +375,28 @@ VkResult VSwapchain::createSwapchain(VDevice& device, const SwapChainSupport& sw
 
   hdrActive = surfaceFormat.colorSpace==VK_COLOR_SPACE_HDR10_ST2084_EXT;
 #if defined(__ANDROID__)
+  if(hdrActive) {
+    bool metadataEnabled = false;
+    for(const auto& extension:VDevice::extensionsList(device.physicalDevice))
+      if(std::strcmp(extension.extensionName, VK_EXT_HDR_METADATA_EXTENSION_NAME)==0)
+        metadataEnabled = true;
+    const auto setMetadata = metadataEnabled ? reinterpret_cast<PFN_vkSetHdrMetadataEXT>(
+        vkGetDeviceProcAddr(device.device.impl,"vkSetHdrMetadataEXT")) : nullptr;
+    if(setMetadata!=nullptr) {
+      VkHdrMetadataEXT metadata = {};
+      metadata.sType = VK_STRUCTURE_TYPE_HDR_METADATA_EXT;
+      metadata.displayPrimaryRed   = {0.708f, 0.292f};
+      metadata.displayPrimaryGreen = {0.170f, 0.797f};
+      metadata.displayPrimaryBlue  = {0.131f, 0.046f};
+      metadata.whitePoint          = {0.3127f, 0.3290f};
+      metadata.maxLuminance        = hdrPeak;
+      // Conservative content bounds, not measured per-frame light statistics.
+      metadata.maxContentLightLevel      = hdrPeak;
+      metadata.maxFrameAverageLightLevel = hdrPeak;
+      setMetadata(device.device.impl, 1, &swapChain, &metadata);
+      Log::i("HDR static metadata = enabled");
+      }
+    }
   Log::i("Display output = ", hdrActive ? "HDR10 PQ" : "SDR", ", Vulkan format = ", int(surfaceFormat.format),
          ", color space = ", int(surfaceFormat.colorSpace), ", HDR peak = ", hdrMaxLuminance());
 #endif

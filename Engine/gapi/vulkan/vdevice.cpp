@@ -138,6 +138,10 @@ void VDevice::createLogicalDevice(VkPhysicalDevice pdev) {
     }
 
   std::vector<const char*> rqExt = requiredExtensions;
+#if defined(__ANDROID__)
+  if(extensionSupport(extensionsList(pdev), VK_EXT_HDR_METADATA_EXTENSION_NAME))
+    rqExt.push_back(VK_EXT_HDR_METADATA_EXTENSION_NAME);
+#endif
   if(props.hasMemRq2) {
     rqExt.push_back(VK_KHR_GET_MEMORY_REQUIREMENTS_2_EXTENSION_NAME);
     }
