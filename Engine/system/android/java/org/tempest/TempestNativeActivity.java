@@ -5,6 +5,9 @@ import android.content.pm.ActivityInfo;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
 import android.hardware.input.InputManager;
+import android.hardware.display.DisplayManager;
+import android.os.Build;
+import android.view.Display;
 import android.os.Bundle;
 import android.text.Editable;
 import android.text.InputType;
@@ -19,6 +22,51 @@ import android.widget.EditText;
 import android.widget.FrameLayout;
 
 public class TempestNativeActivity extends NativeActivity implements InputManager.InputDeviceListener {
+    private volatile float hdrPeakLuminance;
+    private int hdrDisplayId = -1;
+    private DisplayManager displayManager;
+    private final DisplayManager.DisplayListener displayListener = new DisplayManager.DisplayListener() {
+        @Override public void onDisplayAdded(int id) { refreshHdrDisplay(); }
+        @Override public void onDisplayRemoved(int id) { refreshHdrDisplay(); }
+        @Override public void onDisplayChanged(int id) { refreshHdrDisplay(); }
+    };
+    private native void nativeDisplayChanged();
+
+    // Called from the render thread; Android display queries stay on the activity thread.
+    public float getHdrPeakLuminance() { return hdrPeakLuminance; }
+
+    @SuppressWarnings("deprecation")
+    private void refreshHdrDisplay() {
+        Display display = getWindowManager().getDefaultDisplay();
+        float peak = 0;
+        int displayId = display == null ? -1 : display.getDisplayId();
+        if (display != null && Build.VERSION.SDK_INT >= 24) {
+            Display.HdrCapabilities caps = display.getHdrCapabilities();
+            int[] types = Build.VERSION.SDK_INT >= 34
+                    ? display.getMode().getSupportedHdrTypes() : caps.getSupportedHdrTypes();
+            for (int type : types) {
+                if (type == Display.HdrCapabilities.HDR_TYPE_HDR10 || type == Display.HdrCapabilities.HDR_TYPE_HDR10_PLUS) {
+                    peak = caps.getDesiredMaxLuminance();
+                    // Some displays advertise HDR without a usable peak-luminance estimate.
+                    if (!Float.isFinite(peak) || peak <= 0)
+                        peak = 1000;
+                    peak = Math.max(100, Math.min(peak, 1000));
+                    break;
+                }
+            }
+        }
+        if (peak != hdrPeakLuminance || displayId != hdrDisplayId) {
+            hdrPeakLuminance = peak;
+            hdrDisplayId = displayId;
+            nativeDisplayChanged();
+        }
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        refreshHdrDisplay();
+    }
     private EditText textInput;
     private boolean synchronizingText;
     private InputManager inputManager;
@@ -36,6 +84,9 @@ public class TempestNativeActivity extends NativeActivity implements InputManage
     protected void onCreate(Bundle state) {
         loadNativeLibrary();
         super.onCreate(state);
+        displayManager = getSystemService(DisplayManager.class);
+        displayManager.registerDisplayListener(displayListener, null);
+        refreshHdrDisplay();
         inputManager = getSystemService(InputManager.class);
         inputManager.registerInputDeviceListener(this, null);
         refreshController();
@@ -128,6 +179,7 @@ public class TempestNativeActivity extends NativeActivity implements InputManage
 
     @Override
     protected void onDestroy() {
+        displayManager.unregisterDisplayListener(displayListener);
         inputManager.unregisterInputDeviceListener(this);
         controllerId = -1;
         resetController();

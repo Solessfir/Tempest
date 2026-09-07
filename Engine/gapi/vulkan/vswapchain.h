@@ -30,6 +30,9 @@ class VSwapchain : public AbstractGraphicsApi::Swapchain {
     uint32_t                 h()      const override { return swapChainExtent.height; }
 
     void                     reset() override;
+    void                     setHdr(bool enabled) override;
+    bool                     isHdr() const override { return hdrActive; }
+    float                    hdrMaxLuminance() const override { return hdrActive ? hdrPeak : 0.f; }
     uint32_t                 imageCount() const override { return uint32_t(views.size()); }
 
     uint32_t                 currentBackBufferIndex() override;
@@ -100,6 +103,9 @@ class VSwapchain : public AbstractGraphicsApi::Swapchain {
 
     uint32_t                 imgIndex = 0;
     uint32_t                 frameId  = 0;
+    bool                     hdrRequested = false;
+    bool                     hdrActive = false;
+    float                    hdrPeak = 0.f;
 
     VkFormat                 swapChainImageFormat = VK_FORMAT_UNDEFINED;
     VkExtent2D               swapChainExtent = {};

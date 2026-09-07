@@ -48,6 +48,19 @@ uint32_t Swapchain::imageCount() const {
   return impl.handler->imageCount();
   }
 
+void Swapchain::setHdr(bool enabled) {
+  impl.handler->setHdr(enabled);
+  implReset();
+  }
+
+bool Swapchain::isHdr() const {
+  return impl.handler->isHdr();
+  }
+
+float Swapchain::hdrMaxLuminance() const {
+  return impl.handler->hdrMaxLuminance();
+  }
+
 Attachment& Swapchain::operator[](size_t id) {
   return img[id];
   }

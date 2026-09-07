@@ -20,6 +20,10 @@ class Swapchain final {
     uint32_t             h() const;
 
     void                 reset();
+    // The caller must finish outstanding frames before changing the output mode.
+    void                 setHdr(bool enabled);
+    bool                 isHdr() const;
+    float                hdrMaxLuminance() const;
 
     uint32_t             currentImage() const;
     uint32_t             imageCount() const;

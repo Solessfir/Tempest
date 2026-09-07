@@ -219,6 +219,7 @@ struct AppEvent {
   enum Type {
     None,
     Resize,
+    DisplayChanged,
     TouchDown,
     TouchMove,
     TouchUp,
@@ -314,6 +315,37 @@ static bool popEvent(AppEvent& evt) {
   g_eventQueue.pop();
   return true;
 }
+
+extern "C" JNIEXPORT void JNICALL
+Java_org_tempest_TempestNativeActivity_nativeDisplayChanged(JNIEnv*, jobject) {
+  AppEvent evt;
+  evt.type = AppEvent::DisplayChanged;
+  pushEvent(evt);
+  }
+
+extern "C" float tempest_android_hdr_peak_luminance() {
+  if(g_app==nullptr || g_app->activity==nullptr)
+    return 0.f;
+  auto* vm = g_app->activity->vm;
+  JNIEnv* env = nullptr;
+  const bool attach = vm->GetEnv(reinterpret_cast<void**>(&env), JNI_VERSION_1_6)==JNI_EDETACHED;
+  if(attach && vm->AttachCurrentThread(&env,nullptr)!=JNI_OK)
+    return 0.f;
+  if(env==nullptr)
+    return 0.f;
+  jclass cls = env->GetObjectClass(g_app->activity->clazz);
+  jmethodID method = cls==nullptr ? nullptr : env->GetMethodID(cls,"getHdrPeakLuminance","()F");
+  float peak = method==nullptr ? 0.f : env->CallFloatMethod(g_app->activity->clazz,method);
+  if(env->ExceptionCheck()) {
+    env->ExceptionClear();
+    peak = 0.f;
+    }
+  if(cls!=nullptr)
+    env->DeleteLocalRef(cls);
+  if(attach)
+    vm->DetachCurrentThread();
+  return peak;
+  }
 
 static void pushKey(uint32_t keyCode, uint32_t code) {
   AppEvent evt;
@@ -781,6 +813,14 @@ void AndroidApi::implProcessEvents(AppCallBack& cb) {
 
   while (popEvent(evt)) {
     switch (evt.type) {
+      case AppEvent::DisplayChanged: {
+        if(g_hasWindow.load()) {
+          const auto size = implWindowClientRect(reinterpret_cast<SystemApi::Window*>(g_mainWindow));
+          SizeEvent e(size.w, size.h);
+          AndroidApi::dispatchResize(wnd, e, true);
+          }
+        break;
+      }
       case AppEvent::Resize: {
         SizeEvent e(evt.data.resize.w, evt.data.resize.h);
         AndroidApi::dispatchResize(wnd, e, true);

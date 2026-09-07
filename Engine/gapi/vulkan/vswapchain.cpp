@@ -5,6 +5,7 @@
 #include <Tempest/Application>
 #include <Tempest/SystemApi>
 #include <Tempest/Platform>
+#include <Tempest/Log>
 
 #include "vdevice.h"
 
@@ -21,6 +22,7 @@
 #  include <android/native_window.h>
 #  include <vulkan/vulkan_android.h>
 extern "C" ANativeWindow* tempest_android_get_native_window();
+extern "C" float tempest_android_hdr_peak_luminance();
 #elif defined(__UNIX__)
 #  define VK_USE_PLATFORM_XLIB_KHR
 #  include <X11/Xlib.h>
@@ -237,6 +239,13 @@ void VSwapchain::reset() {
   createSwapchain(device);
   }
 
+void VSwapchain::setHdr(bool enabled) {
+  if(hdrRequested==enabled)
+    return;
+  hdrRequested = enabled;
+  reset();
+  }
+
 void VSwapchain::cleanup() noexcept {
   cleanupSwapchain();
   cleanupSurface();
@@ -349,9 +358,25 @@ VkResult VSwapchain::createSwapchain(VDevice& device, const SwapChainSupport& sw
   createInfo.presentMode    = presentMode;
   createInfo.clipped        = VK_FALSE;
 
-  if(vkCreateSwapchainKHR(device.device.impl, &createInfo, nullptr, &swapChain) != VK_SUCCESS)
+  auto result = vkCreateSwapchainKHR(device.device.impl, &createInfo, nullptr, &swapChain);
+  if(result!=VK_SUCCESS && result!=VK_ERROR_DEVICE_LOST && surfaceFormat.colorSpace==VK_COLOR_SPACE_HDR10_ST2084_EXT) {
+    Log::e("HDR swapchain creation failed (", int(result), "); retrying SDR");
+    const bool requested = hdrRequested;
+    hdrRequested = false;
+    surfaceFormat = findSwapSurfaceFormat(swapChainSupport.formats);
+    hdrRequested = requested;
+    createInfo.imageFormat = surfaceFormat.format;
+    createInfo.imageColorSpace = surfaceFormat.colorSpace;
+    result = vkCreateSwapchainKHR(device.device.impl, &createInfo, nullptr, &swapChain);
+    }
+  if(result != VK_SUCCESS)
     throw std::system_error(Tempest::GraphicsErrc::NoDevice);
 
+  hdrActive = surfaceFormat.colorSpace==VK_COLOR_SPACE_HDR10_ST2084_EXT;
+#if defined(__ANDROID__)
+  Log::i("Display output = ", hdrActive ? "HDR10 PQ" : "SDR", ", Vulkan format = ", int(surfaceFormat.format),
+         ", color space = ", int(surfaceFormat.colorSpace), ", HDR peak = ", hdrMaxLuminance());
+#endif
   swapChainImageFormat = surfaceFormat.format;
   swapChainExtent      = extent;
 
@@ -397,6 +422,19 @@ void VSwapchain::createImageViews(VDevice &device) {
   }
 
 VkSurfaceFormatKHR VSwapchain::findSwapSurfaceFormat(const std::vector<VkSurfaceFormatKHR>& availableFormats) {
+  if(availableFormats.empty())
+    throw std::system_error(Tempest::GraphicsErrc::NoDevice);
+#if defined(__ANDROID__)
+  hdrPeak = tempest_android_hdr_peak_luminance();
+  if(hdrRequested && hdrPeak>0) {
+    for(const auto& f:availableFormats) {
+      if(f.colorSpace==VK_COLOR_SPACE_HDR10_ST2084_EXT &&
+         (f.format==VK_FORMAT_A2B10G10R10_UNORM_PACK32 || f.format==VK_FORMAT_A2R10G10B10_UNORM_PACK32))
+        return f;
+      }
+    Log::i("HDR display detected, but no supported 10-bit PQ Vulkan surface format; using SDR");
+    }
+#endif
   if(availableFormats.size()==1 && availableFormats[0].format==VK_FORMAT_UNDEFINED)
     return {VK_FORMAT_B8G8R8A8_UNORM, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR};
 
@@ -406,7 +444,14 @@ VkSurfaceFormatKHR VSwapchain::findSwapSurfaceFormat(const std::vector<VkSurface
       return availableFormat;
     }
 
-  return availableFormats[0];
+  // Never label an arbitrary HDR surface as SDR when the preferred byte order is unavailable.
+  for(const auto& f:availableFormats)
+    if(f.colorSpace==VK_COLOR_SPACE_SRGB_NONLINEAR_KHR && f.format==VK_FORMAT_R8G8B8A8_UNORM)
+      return f;
+  for(const auto& f:availableFormats)
+    if(f.colorSpace==VK_COLOR_SPACE_SRGB_NONLINEAR_KHR)
+      return f;
+  throw std::system_error(Tempest::GraphicsErrc::NoDevice);
   }
 
 VkPresentModeKHR VSwapchain::findSwapPresentMode(const std::vector<VkPresentModeKHR> &availablePresentModes) {
