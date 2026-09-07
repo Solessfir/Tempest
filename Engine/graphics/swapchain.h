@@ -21,6 +21,9 @@ class Swapchain final {
 
     void                 reset();
     // The caller must finish outstanding frames before changing the output mode.
+    // HDR is a request, not a guarantee; check isHdr() after creation and every reset.
+    // An active HDR surface expects Rec.2020 primaries encoded with ST 2084 (HDR10 PQ).
+    // hdrMaxLuminance() reports the backend's reference peak in nits, or zero for SDR.
     void                 setHdr(bool enabled);
     bool                 isHdr() const;
     float                hdrMaxLuminance() const;
