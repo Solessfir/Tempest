@@ -22,6 +22,7 @@ class Window : public Widget {
     ~Window() override;
 
     void setWindowTitle(const char* utf8);
+    Rect safeArea() const { return SystemApi::windowSafeArea(id); }
 
   protected:
     virtual void render();

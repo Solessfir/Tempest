@@ -8,6 +8,9 @@ import android.hardware.input.InputManager;
 import android.hardware.display.DisplayManager;
 import android.os.Build;
 import android.view.Display;
+import android.view.DisplayCutout;
+import android.view.View;
+import android.view.WindowInsets;
 import android.os.Bundle;
 import android.text.Editable;
 import android.text.InputType;
@@ -31,6 +34,26 @@ public class TempestNativeActivity extends NativeActivity implements InputManage
         @Override public void onDisplayChanged(int id) { refreshHdrDisplay(); }
     };
     private native void nativeDisplayChanged();
+    private native void nativeCutoutChanged(int left, int top, int right, int bottom, int width, int height);
+
+    private void refreshCutout(View content) {
+        int left = 0, top = 0, right = 0, bottom = 0;
+        if (Build.VERSION.SDK_INT >= 28) {
+            WindowInsets insets = content.getRootWindowInsets();
+            DisplayCutout cutout = insets == null ? null : insets.getDisplayCutout();
+            if (cutout != null) {
+                int[] location = new int[2];
+                content.getLocationInWindow(location);
+                View decor = getWindow().getDecorView();
+                // Convert window insets into content insets, including letterboxed windows.
+                left = Math.max(0, cutout.getSafeInsetLeft() - location[0]);
+                top = Math.max(0, cutout.getSafeInsetTop() - location[1]);
+                right = Math.max(0, cutout.getSafeInsetRight() - (decor.getWidth() - location[0] - content.getWidth()));
+                bottom = Math.max(0, cutout.getSafeInsetBottom() - (decor.getHeight() - location[1] - content.getHeight()));
+            }
+        }
+        nativeCutoutChanged(left, top, right, bottom, content.getWidth(), content.getHeight());
+    }
 
     // Called from the render thread; Android display queries stay on the activity thread.
     public float getHdrPeakLuminance() { return hdrPeakLuminance; }
@@ -84,6 +107,13 @@ public class TempestNativeActivity extends NativeActivity implements InputManage
     protected void onCreate(Bundle state) {
         loadNativeLibrary();
         super.onCreate(state);
+        View content = findViewById(android.R.id.content);
+        content.setOnApplyWindowInsetsListener((view, insets) -> {
+            refreshCutout(view);
+            return view.onApplyWindowInsets(insets);
+        });
+        content.addOnLayoutChangeListener((view, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) -> refreshCutout(view));
+        content.requestApplyInsets();
         displayManager = getSystemService(DisplayManager.class);
         displayManager.registerDisplayListener(displayListener, null);
         refreshHdrDisplay();

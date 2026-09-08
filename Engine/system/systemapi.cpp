@@ -184,6 +184,15 @@ void SystemApi::processEvent(AppCallBack& cb) {
   return inst().implProcessEvents(cb);
   }
 
+Rect SystemApi::windowSafeArea(SystemApi::Window* w) {
+  return inst().implWindowSafeArea(w);
+  }
+
+Rect SystemApi::implWindowSafeArea(SystemApi::Window* w) {
+  const auto client = implWindowClientRect(w);
+  return Rect(0,0,client.w,client.h);
+  }
+
 Rect SystemApi::windowClientRect(SystemApi::Window* w) {
   return inst().implWindowClientRect(w);
   }

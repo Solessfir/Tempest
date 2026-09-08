@@ -31,6 +31,7 @@
 #include <mutex>
 #include <condition_variable>
 #include <queue>
+#include <algorithm>
 
 #define LOGI(...) ((void)__android_log_print(ANDROID_LOG_INFO, "Tempest", __VA_ARGS__))
 #define LOGW(...) ((void)__android_log_print(ANDROID_LOG_WARN, "Tempest", __VA_ARGS__))
@@ -116,6 +117,34 @@ static bool                 g_isResumed = false;
 static bool                 g_hasFocus  = false;
 static std::mutex           g_softInputMutex;
 static std::u32string       g_softInputText;
+
+static std::mutex g_cutoutMutex;
+static struct {
+  int left = 0, top = 0, right = 0, bottom = 0;
+  int width = 0, height = 0;
+  } g_cutout;
+
+extern "C" JNIEXPORT void JNICALL
+Java_org_tempest_TempestNativeActivity_nativeCutoutChanged(JNIEnv*, jobject,
+    jint left, jint top, jint right, jint bottom, jint width, jint height) {
+  std::lock_guard<std::mutex> lock(g_cutoutMutex);
+  g_cutout = {left,top,right,bottom,width,height};
+  }
+
+Rect AndroidApi::implWindowSafeArea(SystemApi::Window* w) {
+  const auto client = implWindowClientRect(w);
+  std::lock_guard<std::mutex> lock(g_cutoutMutex);
+  if(g_cutout.width<=0 || g_cutout.height<=0)
+    return Rect(0,0,client.w,client.h);
+  // Insets arrive in Android view pixels; the rendering surface can have a different size.
+  const float sx = float(client.w)/float(g_cutout.width);
+  const float sy = float(client.h)/float(g_cutout.height);
+  const int left = std::clamp(int(std::ceil(g_cutout.left*sx)),0,client.w);
+  const int top = std::clamp(int(std::ceil(g_cutout.top*sy)),0,client.h);
+  const int right = std::clamp(int(std::ceil(g_cutout.right*sx)),0,client.w-left);
+  const int bottom = std::clamp(int(std::ceil(g_cutout.bottom*sy)),0,client.h-top);
+  return Rect(left,top,client.w-left-right,client.h-top-bottom);
+  }
 
 // Gamepad state tracking (uses struct from SystemApi)
 static GamepadState g_gamepad;

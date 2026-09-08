@@ -17,6 +17,7 @@ class AndroidApi final: SystemApi {
     void     implExit() override;
 
     Rect     implWindowClientRect(SystemApi::Window *w) override;
+    Rect     implWindowSafeArea(SystemApi::Window *w) override;
     bool     implSetAsFullscreen(SystemApi::Window *w, bool fullScreen) override;
     bool     implIsFullscreen(SystemApi::Window *w) override;
 

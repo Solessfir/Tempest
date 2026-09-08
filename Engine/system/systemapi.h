@@ -76,6 +76,8 @@ class SystemApi {
     static void     exit();
 
     static Rect     windowClientRect(SystemApi::Window *w);
+    /// Client-coordinate area that avoids display cutouts, in rendering pixels.
+    static Rect     windowSafeArea(SystemApi::Window *w);
 
     static bool     setAsFullscreen(SystemApi::Window *w, bool fullScreen);
     static bool     isFullscreen(SystemApi::Window *w);
@@ -109,6 +111,7 @@ class SystemApi {
     virtual void     implExit() = 0;
 
     virtual Rect     implWindowClientRect(SystemApi::Window *w) = 0;
+    virtual Rect     implWindowSafeArea(SystemApi::Window *w);
 
     virtual bool     implSetAsFullscreen(SystemApi::Window *w, bool fullScreen) = 0;
     virtual bool     implIsFullscreen(SystemApi::Window *w) = 0;
