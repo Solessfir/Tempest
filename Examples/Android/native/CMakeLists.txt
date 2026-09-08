@@ -1,0 +1,13 @@
+cmake_minimum_required(VERSION 3.16)
+project(TempestExample LANGUAGES C CXX)
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+set(TEMPEST_BUILD_SHARED OFF CACHE BOOL "" FORCE)
+
+add_subdirectory(../../../Engine engine)
+add_library(TempestExample SHARED main.cpp)
+set_target_properties(TempestExample PROPERTIES OUTPUT_NAME tempest-example)
+target_link_libraries(TempestExample PRIVATE Tempest)
+target_include_directories(TempestExample PRIVATE ../../../Engine/include)
+include(../../../Engine/cmake/TempestAndroid.cmake)
+tempest_android_native_target(TempestExample)

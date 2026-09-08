@@ -49,6 +49,12 @@ auto pm = device.readPixels(tex);
 pm.save(outImg);
 ```
 
+### Android builds
+
+The [Android example](Examples/Android/README.md) uses CMake to generate APK packaging files.
+Tempest supplies the activity, Gradle templates and JNI keep rules; applications keep their native CMake build.
+Desktop builds do not require Java, the Android SDK or Gradle.
+
 ### Ecosystem
 During development various issues of Vulkan stack been found, reported and some were fixed. 
 
