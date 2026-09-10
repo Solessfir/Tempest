@@ -11,6 +11,7 @@ import android.os.SystemClock;
 import android.os.VibrationEffect;
 import android.os.Vibrator;
 import android.provider.Settings;
+import android.util.Log;
 import android.media.AudioAttributes;
 import android.view.Display;
 import android.view.DisplayCutout;
@@ -105,6 +106,24 @@ public class TempestNativeActivity extends NativeActivity implements InputManage
     private final float[] controllerAxes = new float[6];
     private boolean resumed;
     private Vibrator activeVibrator;
+    private boolean vibrationFailureReported;
+
+    @SuppressWarnings("deprecation")
+    private void reportControllerVibration() {
+        InputDevice device = InputDevice.getDevice(controllerId);
+        if (!isController(device))
+            return;
+        vibrationFailureReported = false;
+        if (Build.VERSION.SDK_INT >= 31) {
+            int[] ids = device.getVibratorManager().getVibratorIds();
+            Log.i("TempestHaptics", "Controller " + device.getName() + " (id=" + controllerId
+                    + ", vendor=" + device.getVendorId() + ", product=" + device.getProductId()
+                    + "): vibrator IDs=" + java.util.Arrays.toString(ids));
+        } else {
+            Log.i("TempestHaptics", "Controller " + device.getName()
+                    + ": hasVibrator=" + device.getVibrator().hasVibrator());
+        }
+    }
 
     private void stopVibration() {
         if (activeVibrator != null) {
@@ -156,8 +175,12 @@ public class TempestNativeActivity extends NativeActivity implements InputManage
                 } else {
                     vibrator.vibrate(duration, attributes);
                 }
-            } catch (SecurityException | IllegalArgumentException ignored) {
+            } catch (SecurityException | IllegalArgumentException error) {
                 // Missing permission or a disconnected controller must never interrupt the game.
+                if (!vibrationFailureReported) {
+                    Log.w("TempestHaptics", "Vibration request failed", error);
+                    vibrationFailureReported = true;
+                }
             }
         });
     }
@@ -253,11 +276,15 @@ public class TempestNativeActivity extends NativeActivity implements InputManage
             }
         }
         resetController();
+        reportControllerVibration();
     }
 
     @Override public void onInputDeviceAdded(int id) { refreshController(); }
     @Override public void onInputDeviceRemoved(int id) { refreshController(); }
-    @Override public void onInputDeviceChanged(int id) { refreshController(); }
+    @Override public void onInputDeviceChanged(int id) {
+        refreshController();
+        if (id == controllerId) reportControllerVibration();
+    }
 
     @Override
     protected void onPause() {
