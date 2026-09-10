@@ -765,9 +765,6 @@ void AndroidApi::implDestroyWindow(SystemApi::Window* w) {
 
 void AndroidApi::implExit() {
   g_isRunning.store(false);
-  if (g_app != nullptr) {
-    ANativeActivity_finish(g_app->activity);
-  }
 }
 
 Tempest::Rect AndroidApi::implWindowClientRect(Window* w) {
@@ -988,16 +985,43 @@ extern "C" void android_main(struct android_app* app) {
 
   const char* argv[] = {"app", nullptr};
   try {
-    main(1, argv);
+    if(app->destroyRequested==0)
+      main(1, argv);
     }
   catch(const std::exception& e) {
     LOGE("Unhandled native exception: %s", e.what());
-    ANativeActivity_finish(app->activity);
     }
   catch(...) {
     LOGE("Unhandled native exception");
-    ANativeActivity_finish(app->activity);
     }
+
+  // NativeActivity callbacks wait for acknowledgements from this thread.
+  // Finish after application cleanup and keep servicing the glue until destruction.
+  if(app->destroyRequested==0)
+    ANativeActivity_finish(app->activity);
+  while(app->destroyRequested==0) {
+    int events = 0;
+    android_poll_source* source = nullptr;
+    if(ALooper_pollOnce(-1,nullptr,&events,reinterpret_cast<void**>(&source))>=0 && source!=nullptr)
+      source->process(app,source);
+    }
+
+  delete g_mainWindow;
+  g_mainWindow = nullptr;
+  g_isRunning.store(false);
+  g_isActive.store(false);
+  g_hasWindow.store(false);
+  g_isResumed = false;
+  g_hasFocus = false;
+  {
+    std::lock_guard<std::mutex> lock(g_eventMutex);
+    g_eventQueue = {};
+    }
+  {
+    std::lock_guard<std::mutex> lock(g_softInputMutex);
+    g_softInputText.clear();
+    }
+  g_app = nullptr;
 }
 
 #endif // __ANDROID__
