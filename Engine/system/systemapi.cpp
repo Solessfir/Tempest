@@ -225,6 +225,13 @@ GamepadState SystemApi::gamepadState() {
   return inst().implGamepadState();
   }
 
+void SystemApi::vibrate(uint32_t milliseconds, float strength, bool gamepad) {
+  inst().implVibrate(milliseconds,strength,gamepad);
+  }
+
+void SystemApi::implVibrate(uint32_t, float, bool) {
+  }
+
 GamepadState SystemApi::implGamepadState() {
   // Default implementation returns disconnected gamepad
   return GamepadState{};

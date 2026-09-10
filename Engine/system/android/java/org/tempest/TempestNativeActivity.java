@@ -7,6 +7,11 @@ import android.graphics.Color;
 import android.hardware.input.InputManager;
 import android.hardware.display.DisplayManager;
 import android.os.Build;
+import android.os.SystemClock;
+import android.os.VibrationEffect;
+import android.os.Vibrator;
+import android.provider.Settings;
+import android.media.AudioAttributes;
 import android.view.Display;
 import android.view.DisplayCutout;
 import android.view.View;
@@ -88,6 +93,7 @@ public class TempestNativeActivity extends NativeActivity implements InputManage
     @Override
     protected void onResume() {
         super.onResume();
+        resumed = true;
         refreshHdrDisplay();
     }
     private EditText textInput;
@@ -97,6 +103,64 @@ public class TempestNativeActivity extends NativeActivity implements InputManage
     private int controllerButtons;
     private int controllerHat;
     private final float[] controllerAxes = new float[6];
+    private boolean resumed;
+    private Vibrator activeVibrator;
+
+    private void stopVibration() {
+        if (activeVibrator != null) {
+            try {
+                activeVibrator.cancel();
+            } catch (SecurityException ignored) {
+                // Applications without VIBRATE permission can still use the activity.
+            }
+            activeVibrator = null;
+        }
+    }
+
+    // Called through JNI. Device lookup and lifecycle checks belong on the activity thread.
+    @SuppressWarnings("deprecation")
+    public void vibrate(int milliseconds, float strength, boolean gamepad) {
+        final long requestedAt = SystemClock.uptimeMillis();
+        runOnUiThread(() -> {
+            if (milliseconds <= 0) {
+                stopVibration();
+                return;
+            }
+            if (!resumed || !hasWindowFocus() || SystemClock.uptimeMillis() - requestedAt > 150)
+                return;
+            if (!Float.isFinite(strength) || strength <= 0)
+                return;
+            if (!gamepad && Settings.System.getInt(getContentResolver(), Settings.System.HAPTIC_FEEDBACK_ENABLED, 1) == 0)
+                return;
+            try {
+                Vibrator vibrator;
+                if (gamepad) {
+                    InputDevice device = InputDevice.getDevice(controllerId);
+                    if (!isController(device))
+                        return;
+                    vibrator = Build.VERSION.SDK_INT >= 31
+                            ? device.getVibratorManager().getDefaultVibrator() : device.getVibrator();
+                } else {
+                    vibrator = getSystemService(Vibrator.class);
+                }
+                if (vibrator == null || !vibrator.hasVibrator())
+                    return;
+                stopVibration();
+                activeVibrator = vibrator;
+                int duration = Math.min(milliseconds, 1000);
+                AudioAttributes attributes = new AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_ASSISTANCE_SONIFICATION).build();
+                if (Build.VERSION.SDK_INT >= 26) {
+                    int amplitude = Math.max(1, Math.min(255, Math.round(strength * 255)));
+                    vibrator.vibrate(VibrationEffect.createOneShot(duration, amplitude), attributes);
+                } else {
+                    vibrator.vibrate(duration, attributes);
+                }
+            } catch (SecurityException | IllegalArgumentException ignored) {
+                // Missing permission or a disconnected controller must never interrupt the game.
+            }
+        });
+    }
 
     private native void nativeSetText(String text);
     private native void nativeEditorAction();
@@ -180,6 +244,7 @@ public class TempestNativeActivity extends NativeActivity implements InputManage
     private void refreshController() {
         if (isController(InputDevice.getDevice(controllerId)))
             return;
+        stopVibration();
         controllerId = -1;
         for (int id : InputDevice.getDeviceIds()) {
             if (isController(InputDevice.getDevice(id))) {
@@ -196,6 +261,8 @@ public class TempestNativeActivity extends NativeActivity implements InputManage
 
     @Override
     protected void onPause() {
+        resumed = false;
+        stopVibration();
         resetController();
         super.onPause();
     }
@@ -203,12 +270,16 @@ public class TempestNativeActivity extends NativeActivity implements InputManage
     @Override
     public void onWindowFocusChanged(boolean focused) {
         super.onWindowFocusChanged(focused);
-        if (!focused)
+        if (!focused) {
+            stopVibration();
             resetController();
+        }
     }
 
     @Override
     protected void onDestroy() {
+        resumed = false;
+        stopVibration();
         displayManager.unregisterDisplayListener(displayListener);
         inputManager.unregisterInputDeviceListener(this);
         controllerId = -1;

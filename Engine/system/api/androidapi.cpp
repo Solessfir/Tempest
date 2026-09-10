@@ -191,6 +191,29 @@ std::string AndroidApi::implAppDataPath() {
   return path==nullptr ? std::string{} : std::string(path);
 }
 
+void AndroidApi::implVibrate(uint32_t milliseconds, float strength, bool gamepad) {
+  if(g_app==nullptr || g_app->activity==nullptr)
+    return;
+  auto& activity = *g_app->activity;
+  JNIEnv* env = nullptr;
+  const auto status = activity.vm->GetEnv(reinterpret_cast<void**>(&env),JNI_VERSION_1_6);
+  const bool attach = status==JNI_EDETACHED;
+  if(attach && activity.vm->AttachCurrentThread(&env,nullptr)!=JNI_OK)
+    return;
+  if(env==nullptr)
+    return;
+  jclass cls = env->GetObjectClass(activity.clazz);
+  jmethodID method = cls==nullptr ? nullptr : env->GetMethodID(cls,"vibrate","(IFZ)V");
+  if(method!=nullptr)
+    env->CallVoidMethod(activity.clazz,method,jint(std::min(milliseconds,1000u)),jfloat(strength),jboolean(gamepad));
+  if(env->ExceptionCheck())
+    env->ExceptionClear();
+  if(cls!=nullptr)
+    env->DeleteLocalRef(cls);
+  if(attach)
+    activity.vm->DetachCurrentThread();
+  }
+
 void AndroidApi::implShowSoftInput(std::string_view text) {
   if(g_app==nullptr || g_app->activity==nullptr)
     return;

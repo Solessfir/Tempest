@@ -2,6 +2,7 @@
 -keepclassmembers class org.tempest.TempestNativeActivity {
     public void showSoftInput(java.lang.String);
     public void hideSoftInput();
+    public void vibrate(int, float, boolean);
     public float getHdrPeakLuminance();
 }
 

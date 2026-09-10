@@ -92,6 +92,10 @@ class SystemApi {
     static void     takeOverlay(UiOverlay* ui);
 
     static GamepadState gamepadState();
+    /// Finite vibration on the phone or active controller; zero duration stops both.
+    /// Unsupported platforms and devices ignore this request.
+    /// Android applications must declare android.permission.VIBRATE in their manifest.
+    static void vibrate(uint32_t milliseconds, float strength, bool gamepad);
     static void showSoftInput(std::string_view text);
     static void hideSoftInput();
     /// Writable persistent directory owned by the application.
@@ -122,6 +126,7 @@ class SystemApi {
     virtual float    implUiScale(SystemApi::Window* w);
 
     virtual GamepadState implGamepadState();
+    virtual void         implVibrate(uint32_t milliseconds, float strength, bool gamepad);
     virtual void         implShowSoftInput(std::string_view text);
     virtual void         implHideSoftInput();
     virtual std::string  implAppDataPath();
