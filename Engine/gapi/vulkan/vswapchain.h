@@ -109,6 +109,7 @@ class VSwapchain : public AbstractGraphicsApi::Swapchain {
 
     VkFormat                 swapChainImageFormat = VK_FORMAT_UNDEFINED;
     VkExtent2D               swapChainExtent = {};
+    VkSurfaceCapabilitiesKHR swapChaincurrentCaps = {};
 
     void                     cleanupSwapchain() noexcept;
     void                     cleanupSurface() noexcept;
@@ -120,10 +121,11 @@ class VSwapchain : public AbstractGraphicsApi::Swapchain {
     void                     createImageViews(VDevice &device);
 
     VkSurfaceFormatKHR       findSwapSurfaceFormat(const std::vector<VkSurfaceFormatKHR>& availableFormats);
-    VkPresentModeKHR         findSwapPresentMode(const std::vector<VkPresentModeKHR>& availablePresentModes);
-    VkExtent2D               findSwapExtent(const VkSurfaceCapabilitiesKHR &capabilities, uint32_t w, uint32_t h);
+    VkPresentModeKHR         findSwapPresentMode(const std::vector<VkPresentModeKHR>& availablePresentModes) const;
+    VkExtent2D               findSwapExtent(const VkSurfaceCapabilitiesKHR &capabilities, uint32_t w, uint32_t h) const;
     uint32_t                 findImageCount(const SwapChainSupport& support) const;
 
+    bool                     isSwapchainLost(VkResult code) const;
     VkResult                 implAcquireNextImage();
     void                     acquireNextImage();
   };

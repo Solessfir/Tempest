@@ -299,11 +299,7 @@ void VSwapchain::createSwapchain(VDevice& device) {
       auto     support  = device.querySwapChainSupport(surface);
       uint32_t imgCount = findImageCount(support);
       auto     code     = createSwapchain(device,support,rect,imgCount);
-#if defined(__ANDROID__)
-      if(code==VK_ERROR_OUT_OF_DATE_KHR) {
-#else
-      if(code==VK_ERROR_OUT_OF_DATE_KHR || code==VK_SUBOPTIMAL_KHR) {
-#endif
+      if(isSwapchainLost(code)) {
         cleanupSwapchain();
         continue;
         }
@@ -402,6 +398,7 @@ VkResult VSwapchain::createSwapchain(VDevice& device, const SwapChainSupport& sw
 #endif
   swapChainImageFormat = surfaceFormat.format;
   swapChainExtent      = extent;
+  swapChaincurrentCaps = swapChainSupport.capabilities;
 
   createImageViews(device);
 
@@ -477,7 +474,7 @@ VkSurfaceFormatKHR VSwapchain::findSwapSurfaceFormat(const std::vector<VkSurface
   throw std::system_error(Tempest::GraphicsErrc::NoDevice);
   }
 
-VkPresentModeKHR VSwapchain::findSwapPresentMode(const std::vector<VkPresentModeKHR> &availablePresentModes) {
+VkPresentModeKHR VSwapchain::findSwapPresentMode(const std::vector<VkPresentModeKHR> &availablePresentModes) const {
   /** intel says mailbox is better option for games
     * https://software.intel.com/content/www/us/en/develop/articles/api-without-secrets-introduction-to-vulkan-part-2.html
     **/
@@ -498,16 +495,12 @@ VkPresentModeKHR VSwapchain::findSwapPresentMode(const std::vector<VkPresentMode
   return VK_PRESENT_MODE_FIFO_KHR;
   }
 
-VkExtent2D VSwapchain::findSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities,
-                                      uint32_t w,uint32_t h) {
+VkExtent2D VSwapchain::findSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities, uint32_t w, uint32_t h) const {
   if(capabilities.currentExtent.width!=std::numeric_limits<uint32_t>::max()) {
     return capabilities.currentExtent;
     }
 
-  VkExtent2D actualExtent = {
-    static_cast<uint32_t>(w),
-    static_cast<uint32_t>(h)
-    };
+  VkExtent2D actualExtent = {uint32_t(w), uint32_t(h) };
 
   actualExtent.width  = std::clamp(actualExtent.width,  capabilities.minImageExtent.width,  capabilities.maxImageExtent.width );
   actualExtent.height = std::clamp(actualExtent.height, capabilities.minImageExtent.height, capabilities.maxImageExtent.height);
@@ -528,22 +521,34 @@ uint32_t VSwapchain::findImageCount(const SwapChainSupport& support) const {
   return imageCount;
   }
 
+bool VSwapchain::isSwapchainLost(VkResult code) const {
+  if(code==VK_SUBOPTIMAL_KHR) {
+    // WA for issues on some linux distros (https://github.com/Try/OpenGothic/issues/977)
+    // probably would have to exclude currentTransform soon due to android
+    VkSurfaceCapabilitiesKHR capabilities = {};
+    vkGetPhysicalDeviceSurfaceCapabilitiesKHR(device.physicalDevice, surface, &capabilities);
+
+    capabilities.currentExtent = findSwapExtent(capabilities, swapChainExtent.width, swapChainExtent.height);
+
+    if(capabilities.currentExtent.width     != swapChainExtent.width ||
+       capabilities.currentExtent.height    != swapChainExtent.height ||
+       capabilities.supportedTransforms     != swapChaincurrentCaps.supportedTransforms ||
+       capabilities.currentTransform        != swapChaincurrentCaps.currentTransform ||
+       capabilities.supportedCompositeAlpha != swapChaincurrentCaps.supportedCompositeAlpha) {
+      return true;
+      }
+    return false;
+    }
+  return code==VK_ERROR_OUT_OF_DATE_KHR;
+  }
+
 void VSwapchain::acquireNextImage() {
   VkResult code = implAcquireNextImage();
 
-  if(code==VK_ERROR_OUT_OF_DATE_KHR)
+  if(isSwapchainLost(code))
     throw SwapchainSuboptimal();
 
-#if !defined(__ANDROID__)
-  if(code==VK_SUBOPTIMAL_KHR)
-    throw SwapchainSuboptimal();
-#endif
-
-#if defined(__ANDROID__)
   if(code!=VK_SUCCESS && code!=VK_SUBOPTIMAL_KHR)
-#else
-  if(code!=VK_SUCCESS)
-#endif
     vkAssert(code);
   }
 
@@ -632,12 +637,8 @@ void VSwapchain::present() {
 
   auto tx = Application::tickCount();
   VkResult code = device.presentQueue->present(presentInfo);
-  if(code==VK_ERROR_OUT_OF_DATE_KHR)
+  if(isSwapchainLost(code))
     throw SwapchainSuboptimal();
-#if !defined(__ANDROID__)
-  if(code==VK_SUBOPTIMAL_KHR)
-    throw SwapchainSuboptimal();
-#endif
   tx = Application::tickCount()-tx;
   if(tx > 2) {
     // std::chrono::system_clock::time_point p = std::chrono::system_clock::now();
@@ -647,12 +648,8 @@ void VSwapchain::present() {
     // Log::i(str," : vkQueuePresentKHR[",imgIndex,"] = ", tx);
     }
 
-#if defined(__ANDROID__)
   if(code!=VK_SUBOPTIMAL_KHR)
     Detail::vkAssert(code);
-#else
-  Detail::vkAssert(code);
-#endif
   acquireNextImage();
   }
 
