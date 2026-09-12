@@ -4,6 +4,7 @@
 
 #include "vdevice.h"
 #include "vshader.h"
+#include "vpipelinediagnostics.h"
 
 #include <Tempest/RenderState>
 
@@ -322,7 +323,37 @@ VkPipeline VPipeline::initGraphicsPipeline(VDevice& device,
     }
 
   VkPipeline graphicsPipeline = VK_NULL_HANDLE;
+  PipelineDiagnostics::Call capture(device, "graphics");
+  for(size_t i=0; i<5; ++i)
+    if(shaders[i].handler!=nullptr)
+      capture.shader(*shaders[i].handler, "main");
+  capture.layout(pb, this->layout);
+  capture.details << "\n  GRAPHICS stride=" << stride << " topology=" << inputAssembly.topology
+                  << " restart=" << inputAssembly.primitiveRestartEnable
+                  << " depthTest=" << depthStencil.depthTestEnable << " depthWrite=" << depthStencil.depthWriteEnable
+                  << " depthOp=" << depthStencil.depthCompareOp << " cull=" << rasterizer.cullMode
+                  << " frontFace=" << rasterizer.frontFace << " discard=" << rasterizer.rasterizerDiscardEnable
+                  << " polygon=" << rasterizer.polygonMode << " samples=" << multisampling.rasterizationSamples
+                  << " dynamicViewport=1 dynamicScissor=1 viewportCount=1 scissorCount=1"
+                  << " tessellation=" << useTesselation << " patchPoints=" << tesselation.patchControlPoints
+                  << " descriptorHeap=" << device.props.hasDescriptorHeap << " legacyRenderPass=" << (rpass!=VK_NULL_HANDLE)
+                  << " subpass=" << pipelineInfo.subpass << " viewMask=" << dynLay->viewMask
+                  << " depthFormat=" << dynLay->depthAttachmentFormat << " stencilFormat=" << dynLay->stencilAttachmentFormat;
+  for(size_t i=0; i<dynLay->colorAttachmentCount; ++i)
+    capture.details << "\n  COLOR index=" << i << " format=" << dynLay->pColorAttachmentFormats[i];
+  for(size_t i=0; i<blendAttCount; ++i) {
+    const auto& b = blendAtt[i];
+    capture.details << "\n  BLEND index=" << i << " enabled=" << b.blendEnable
+                    << " src=" << b.srcColorBlendFactor << " dst=" << b.dstColorBlendFactor << " op=" << b.colorBlendOp
+                    << " srcAlpha=" << b.srcAlphaBlendFactor << " dstAlpha=" << b.dstAlphaBlendFactor
+                    << " alphaOp=" << b.alphaBlendOp << " writeMask=" << b.colorWriteMask;
+    }
+  for(size_t i=0; i<declSize; ++i)
+    capture.details << "\n  ATTRIBUTE location=" << vsInput[i].location << " binding=" << vsInput[i].binding
+                    << " format=" << vsInput[i].format << " offset=" << vsInput[i].offset;
+  capture.begin();
   const auto err = vkCreateGraphicsPipelines(device.device.impl,VK_NULL_HANDLE,1,&pipelineInfo,nullptr,&graphicsPipeline);
+  capture.end(err);
   if(err!=VK_SUCCESS)
     throw std::system_error(Tempest::GraphicsErrc::InvalidShaderModule);
   return graphicsPipeline;
@@ -419,7 +450,14 @@ VCompPipeline::VCompPipeline(VDevice& device, const VShader& comp)
       createFlags2.pNext = info.pNext;
       info.pNext         = &createFlags2;
       }
+    PipelineDiagnostics::Call capture(device, "compute");
+    capture.shader(comp, info.stage.pName);
+    capture.layout(pb, layout);
+    capture.details << "\n  COMPUTE flags=" << info.flags << " descriptorHeap=" << device.props.hasDescriptorHeap
+                    << " workgroup=" << wgSize.x << ',' << wgSize.y << ',' << wgSize.z;
+    capture.begin();
     const auto err = vkCreateComputePipelines(dev, VK_NULL_HANDLE, 1, &info, nullptr, &impl);
+    capture.end(err);
     if(err!=VK_SUCCESS)
       throw std::system_error(Tempest::GraphicsErrc::InvalidShaderModule);
 
@@ -477,7 +515,14 @@ VkPipeline VCompPipeline::instance(VkPipelineLayout pLay) {
     info.flags              = VK_PIPELINE_CREATE_DERIVATIVE_BIT;
     info.basePipelineHandle = impl;
     info.basePipelineIndex  = -1;
+    PipelineDiagnostics::Call capture(device, "compute-derivative");
+    capture.shader(*shader.handler, info.stage.pName);
+    capture.layout(pb, layout);
+    capture.details << "\n  COMPUTE flags=" << info.flags << " basePipeline=" << uint64_t(impl)
+                    << " baseIndex=" << info.basePipelineIndex;
+    capture.begin();
     const auto err = vkCreateComputePipelines(dev, VK_NULL_HANDLE, 1, &info, nullptr, &val);
+    capture.end(err);
     if(err!=VK_SUCCESS)
       throw std::system_error(Tempest::GraphicsErrc::InvalidShaderModule);
 

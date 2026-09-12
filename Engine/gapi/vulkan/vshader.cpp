@@ -8,6 +8,8 @@ using namespace Tempest::Detail;
 
 VShader::VShader(VDevice& device, const void *source, size_t src_size)
   :Shader(source, src_size), device(device.device.impl) {
+  diagnosticCode.resize(src_size/sizeof(uint32_t));
+  std::memcpy(diagnosticCode.data(), source, src_size);
   VkShaderModuleCreateInfo createInfo = {};
   createInfo.sType    = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
   createInfo.codeSize = src_size;

@@ -99,6 +99,8 @@ struct Tempest::VulkanApi::Impl {
       validationLayers = checkValidationLayerSupport();
       if(validationLayers.size()==0)
         Log::d("VulkanApi: no validation layers available");
+      for(const char* layer:validationLayers)
+        Log::e("[PipelineCapture] enabling layer ", layer, " for this instance");
       }
 
     VkApplicationInfo appInfo = {};

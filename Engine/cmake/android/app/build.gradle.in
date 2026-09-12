@@ -92,6 +92,7 @@ android {
     }
     sourceSets {
         main {
+            jniLibs.srcDirs = ['@TEMPEST_DIAGNOSTIC_JNI_DIR@']
             manifest.srcFile file(@MANIFEST@)
             java.srcDirs = @JAVA_DIRS@
             res.srcDirs = @RESOURCE_DIRS@

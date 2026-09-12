@@ -17,6 +17,7 @@ class VShader : public Tempest::Detail::Shader {
     ~VShader();
 
     VkShaderModule impl = VK_NULL_HANDLE;
+    std::vector<uint32_t> diagnosticCode;
 
   protected:
     VkDevice       device;
