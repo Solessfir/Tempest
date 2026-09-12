@@ -117,6 +117,7 @@ static bool                 g_isResumed = false;
 static bool                 g_hasFocus  = false;
 static std::mutex           g_softInputMutex;
 static std::u32string       g_softInputText;
+static std::atomic_bool    g_softInputActive{false};
 
 static std::mutex g_cutoutMutex;
 static struct {
@@ -243,6 +244,7 @@ void AndroidApi::implShowSoftInput(std::string_view text) {
   jmethodID show = activityClass==nullptr ? nullptr :
       env->GetMethodID(activityClass,"showSoftInput","(Ljava/lang/String;)V");
   if(show!=nullptr) {
+    g_softInputActive.store(true);
     jstring value = env->NewString(reinterpret_cast<const jchar*>(utf16.data()),jsize(utf16.size()));
     env->CallVoidMethod(g_app->activity->clazz,show,value);
     env->DeleteLocalRef(value);
@@ -251,6 +253,7 @@ void AndroidApi::implShowSoftInput(std::string_view text) {
   }
 
 void AndroidApi::implHideSoftInput() {
+  g_softInputActive.store(false);
   if(g_app==nullptr || g_app->activity==nullptr)
     return;
 
@@ -400,13 +403,14 @@ extern "C" float tempest_android_hdr_peak_luminance() {
   }
 
 static void pushKey(uint32_t keyCode, uint32_t code) {
+  // The caller holds g_eventMutex so a text replacement is queued as one batch.
   AppEvent evt;
   evt.data.key.keyCode = keyCode;
   evt.data.key.code    = code;
   evt.type = AppEvent::KeyDown;
-  pushEvent(evt);
+  g_eventQueue.push(evt);
   evt.type = AppEvent::KeyUp;
-  pushEvent(evt);
+  g_eventQueue.push(evt);
   }
 
 static std::u32string fromJavaString(JNIEnv* env, jstring text) {
@@ -438,6 +442,9 @@ extern "C" JNIEXPORT void JNICALL
 Java_org_tempest_TempestNativeActivity_nativeSetText(JNIEnv* env, jobject, jstring text) {
   auto next = fromJavaString(env,text);
   std::lock_guard<std::mutex> lock(g_softInputMutex);
+  if(!g_softInputActive.load())
+    return;
+  std::lock_guard<std::mutex> events(g_eventMutex);
   for(size_t i=0; i<g_softInputText.size(); ++i)
     pushKey(AKEYCODE_DEL,0);
   for(char32_t code:next)
@@ -447,6 +454,10 @@ Java_org_tempest_TempestNativeActivity_nativeSetText(JNIEnv* env, jobject, jstri
 
 extern "C" JNIEXPORT void JNICALL
 Java_org_tempest_TempestNativeActivity_nativeEditorAction(JNIEnv*, jobject) {
+  std::lock_guard<std::mutex> lock(g_softInputMutex);
+  if(!g_softInputActive.load())
+    return;
+  std::lock_guard<std::mutex> events(g_eventMutex);
   pushKey(AKEYCODE_ENTER,'\n');
   }
 
@@ -674,6 +685,11 @@ static int32_t onInputEvent(struct android_app* app, AInputEvent* event) {
 
     // Leave volume keys to Android so it can adjust the activity's music stream.
     if(keyCode==AKEYCODE_VOLUME_UP || keyCode==AKEYCODE_VOLUME_DOWN || keyCode==AKEYCODE_VOLUME_MUTE)
+      return 0;
+
+    // Only EditText may change the text while the keyboard is open.
+    // A native deletion leaves its buffer unchanged and the next IME update restores the deleted text.
+    if(g_softInputActive.load() && keyCode!=AKEYCODE_BACK)
       return 0;
 
     AppEvent evt;
@@ -1013,6 +1029,7 @@ extern "C" void android_main(struct android_app* app) {
   g_hasWindow.store(false);
   g_isResumed = false;
   g_hasFocus = false;
+  g_softInputActive.store(false);
   {
     std::lock_guard<std::mutex> lock(g_eventMutex);
     g_eventQueue = {};
