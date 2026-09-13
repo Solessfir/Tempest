@@ -420,6 +420,8 @@ class VDevice : public AbstractGraphicsApi::Device {
     Timeline                timeline;
 
     std::mutex              allocSync;
+    std::mutex              pipelineCreationSync;
+    bool                    serializePipelineCreation = false;
     VAllocator              allocator;
 
     VFramebufferMap         fboMap;
