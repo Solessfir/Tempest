@@ -517,6 +517,8 @@ namespace Tempest {
         virtual ~Fence()=default;
         virtual void wait() = 0;
         virtual bool wait(uint64_t time) = 0;
+
+        virtual void setPayload(std::vector<Detail::DSharedPtr<const AbstractGraphicsApi::Shared*>>&&) {}
         };
       struct Swapchain:NoCopy {
         virtual ~Swapchain()=default;
@@ -634,6 +636,8 @@ namespace Tempest {
 
       using PBuffer       = Detail::DSharedPtr<Buffer*>;
       using PTexture      = Detail::DSharedPtr<Texture*>;
+      using PRtAs         = Detail::DSharedPtr<AccelerationStructure*>;
+
       using PPipeline     = Detail::DSharedPtr<Pipeline*>;
       using PCompPipeline = Detail::DSharedPtr<CompPipeline*>;
       using PShader       = Detail::DSharedPtr<Shader*>;
@@ -663,8 +667,8 @@ namespace Tempest {
       virtual PTexture   createStorage(Device* d, const uint32_t w, const uint32_t h, uint32_t mips, TextureFormat frm) = 0;
       virtual PTexture   createStorage(Device* d, const uint32_t w, const uint32_t h, const uint32_t depth, uint32_t mips, TextureFormat frm) = 0;
 
-      virtual AccelerationStructure* createBottomAccelerationStruct(Device* d, const RtGeometry* geom, size_t geomSize);
-      virtual AccelerationStructure* createTopAccelerationStruct(Device* d, const RtInstance* geom, AccelerationStructure*const* as, size_t geomSize);
+      virtual PRtAs      createBottomAccelerationStruct(Device* d, const RtGeometry* geom, size_t geomSize);
+      virtual PRtAs      createTopAccelerationStruct(Device* d, const RtInstance* geom, AccelerationStructure*const* as, size_t geomSize);
 
       virtual void       readPixels   (Device* d, Pixmap& out, const PTexture t,
                                        TextureFormat frm, const uint32_t w, const uint32_t h, uint32_t mip, bool storageImg) = 0;
