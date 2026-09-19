@@ -548,8 +548,7 @@ void VSwapchain::acquireNextImage() {
   if(isSwapchainLost(code))
     throw SwapchainSuboptimal();
 
-  if(code!=VK_SUCCESS && code!=VK_SUBOPTIMAL_KHR)
-    vkAssert(code);
+  vkAssert(code);
   }
 
 uint32_t VSwapchain::currentBackBufferIndex() {
