@@ -408,14 +408,9 @@ VkResult VSwapchain::createSwapchain(VDevice& device, const SwapChainSupport& sw
     createInfo.imageSharingMode      = VK_SHARING_MODE_EXCLUSIVE;
     }
 
-#if defined(__ANDROID__)
-  if((swapChainSupport.capabilities.supportedTransforms & VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR)!=0)
-    createInfo.preTransform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
-  else
-    createInfo.preTransform = swapChainSupport.capabilities.currentTransform;
-#else
   createInfo.preTransform   = swapChainSupport.capabilities.currentTransform;
-#endif
+  if(swapChainSupport.capabilities.supportedTransforms & VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR)
+    createInfo.preTransform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
   createInfo.compositeAlpha = alphaMode;
   createInfo.presentMode    = presentMode;
   createInfo.clipped        = VK_FALSE;
