@@ -64,6 +64,15 @@ class SystemApi {
       Hidden, //internal
       };
 
+    enum Orientation : uint8_t {
+      Portrait           = 1 << 0,
+      PortraitUpsideDown = 1 << 1,
+      LandscapeLeft      = 1 << 2,
+      LandscapeRight     = 1 << 3,
+      Landscape          = LandscapeLeft | LandscapeRight,
+      AllOrientations    = Portrait | PortraitUpsideDown | Landscape,
+      };
+
     struct TranslateKeyPair final {
       uint16_t src;
       uint16_t result;
@@ -83,6 +92,7 @@ class SystemApi {
     static bool     isFullscreen(SystemApi::Window *w);
 
     static void     setWindowTitle(SystemApi::Window *w, const char* utf8);
+    static void     setAllowedOrientations(SystemApi::Window *w, Orientation orientations);
     static float    uiScale(SystemApi::Window *w);
 
     static uint16_t translateKey(uint64_t scancode);
@@ -136,9 +146,11 @@ class SystemApi {
     virtual void     implProcessEvents(AppCallBack& cb) = 0;
 
     virtual void     implSetWindowTitle(SystemApi::Window *w, const char* utf8) = 0;
+    virtual void     implSetAllowedOrientations(SystemApi::Window *w, Orientation orientations);
 
     static void      setCursorPosition(SystemApi::Window *w, int x, int y);
     static void      showCursor(SystemApi::Window *w, CursorShape c);
+    static CursorShape cursorShape(Tempest::Window& cb);
 
     static void      dispatchOverlayRender(Tempest::Window &w, Tempest::PaintEvent& e);
     static void      dispatchRender    (Tempest::Window& cb);

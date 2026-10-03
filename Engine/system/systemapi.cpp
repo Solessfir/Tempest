@@ -33,6 +33,9 @@ void SystemApi::implSetWindowTitle(Window *w, const char *utf8) {
   // TODO
   }
 
+void SystemApi::implSetAllowedOrientations(Window*, Orientation) {
+  }
+
 void SystemApi::setupKeyTranslate(const TranslateKeyPair k[], uint16_t funcCount ) {
   m.keys.clear();
   m.a. clear();
@@ -209,12 +212,20 @@ void SystemApi::setWindowTitle(Window *w, const char *utf8) {
   return inst().implSetWindowTitle(w, utf8);
   }
 
+void SystemApi::setAllowedOrientations(Window *w, Orientation orientations) {
+  return inst().implSetAllowedOrientations(w, orientations);
+  }
+
 void SystemApi::setCursorPosition(SystemApi::Window *w, int x, int y) {
   return inst().implSetCursorPosition(w,x,y);
   }
 
 void SystemApi::showCursor(SystemApi::Window *w, CursorShape show) {
   return inst().implShowCursor(w,show);
+  }
+
+CursorShape SystemApi::cursorShape(Tempest::Window& cb) {
+  return cb.resolvedCursor;
   }
 
 float SystemApi::uiScale(Window* w) {

@@ -74,7 +74,7 @@ if(ANDROID)
   set(TEMPEST_BUILD_DIRECTX12 OFF CACHE INTERNAL "")
 
   # Add android_native_app_glue
-  set(ANDROID_NATIVE_APP_GLUE_DIR "${ANDROID_NDK}/sources/android/native_app_glue")
+  set(ANDROID_NATIVE_APP_GLUE_DIR "${CMAKE_ANDROID_NDK}/sources/android/native_app_glue")
   add_library(native_app_glue STATIC "${ANDROID_NATIVE_APP_GLUE_DIR}/android_native_app_glue.c")
   target_include_directories(native_app_glue PUBLIC "${ANDROID_NATIVE_APP_GLUE_DIR}")
   target_include_directories(${PROJECT_NAME} PUBLIC "${ANDROID_NATIVE_APP_GLUE_DIR}")
@@ -404,7 +404,7 @@ elseif(APPLE)
   target_link_libraries(${PROJECT_NAME} PRIVATE "-framework AppKit" "-framework QuartzCore" "-framework Metal")
 elseif(ANDROID)
   #NOTE: use Android NDK toolchain for configure
-  target_link_libraries(${PROJECT_NAME} PRIVATE android log native_app_glue)
+  target_link_libraries(${PROJECT_NAME} PRIVATE native_app_glue android dl log)
 elseif(UNIX)
   target_link_libraries(${PROJECT_NAME} PRIVATE X11 Xcursor)
 endif()

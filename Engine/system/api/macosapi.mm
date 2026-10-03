@@ -42,6 +42,9 @@ static const uint keyTable[26]={
 
 static std::atomic_bool isRunning{true};
 
+__attribute__((annotate("returns_localized_nsstring")))
+static inline NSString * _Nonnull UnlocalizedString(NSString * _Nonnull s) { return s; }
+
 static Event::MouseButton toButton(NSEventType type) {
   if(type==NSEventTypeLeftMouseDown || type==NSEventTypeLeftMouseUp)
     return Event::ButtonLeft;
@@ -106,6 +109,53 @@ static Tempest::Point mousePos(NSEvent* e) {
   return mousePos(e,dummy);
   }
 
+static Tempest::Point mousePos(NSWindow* wnd, bool& inWindow) {
+  NSPoint p  = [wnd mouseLocationOutsideOfEventStream];
+  NSPoint px = mousePos(p, wnd, inWindow);
+  return Tempest::Point{int(px.x), int(px.y)};
+  }
+
+static NSCursor* toNSCursor(CursorShape show) {
+  switch (show) {
+    case CursorShape::Arrow:
+      return [NSCursor arrowCursor];
+    case CursorShape::Hidden:
+      return nullptr;
+    case CursorShape::IBeam:
+      return [NSCursor IBeamCursor];
+    case CursorShape::SizeVer:
+      return [NSCursor resizeUpDownCursor];
+    case CursorShape::SizeHor:
+      return [NSCursor resizeLeftRightCursor];
+    //NOTE: no relevant cursor type on macos
+    case CursorShape::SizeBDiag:
+    case CursorShape::SizeFDiag:
+    case CursorShape::SizeAll:
+      return [NSCursor arrowCursor];
+    }
+  return [NSCursor arrowCursor];
+  }
+
+static void implShowCursor(SystemApi::Window*, CursorShape show) {
+  static bool hidden = false;
+  NSCursor* cur = toNSCursor(show);
+  if(hidden != (cur==nullptr)) {
+    // show/hide mechanism is ref couter based on Mac
+    // https://developer.apple.com/library/archive/documentation/GraphicsImaging/Conceptual/QuartzDisplayServicesConceptual/Articles/MouseCursor.html
+    hidden = (cur==nullptr);
+    if(hidden) {
+      // CGDisplayHideCursor(kCGNullDirectDisplay);
+      [NSCursor hide];
+      } else {
+      // CGDisplayShowCursor(kCGNullDirectDisplay);
+      [NSCursor unhide];
+      }
+    }
+  if(cur!=nullptr) {
+    [cur set];
+    }
+  }
+
 void Detail::ImplMacOSApi::onDisplayLink(void* hwnd) {
   @autoreleasepool {
     auto cb = reinterpret_cast<Tempest::Window*>(hwnd);
@@ -127,6 +177,20 @@ void Detail::ImplMacOSApi::onDidResize(void* hwnd, void* w) {
 void Detail::ImplMacOSApi::onDidBecomeKey(void* hwnd, void* w) {
   auto      cb  = reinterpret_cast<Tempest::Window*>(hwnd);
   NSWindow* wnd = reinterpret_cast<NSWindow*>(w);
+
+  bool inWindow = true;
+  auto mpos     = mousePos(wnd, inWindow);
+  if(inWindow) {
+    MouseEvent e( mpos.x,
+                  mpos.y,
+                  Event::ButtonNone,
+                  Event::M_NoModifier,
+                  0,
+                  0,
+                  Event::MouseMove );
+    MacOSApi::dispatchMouseMove(*cb, e);
+    }
+  implShowCursor(reinterpret_cast<SystemApi::Window*>(w), MacOSApi::cursorShape(*cb));
 
   FocusEvent e(true, Event::UnknownReason);
   MacOSApi::dispatchFocus(*cb, e);
@@ -214,7 +278,7 @@ static SystemApi::Window* createWindow(Tempest::Window *owner,
     defer:NO];
 
   [wnd cascadeTopLeftFromPoint:NSMakePoint(20,20)];
-  [wnd setTitle:@"Tempest"];
+  [wnd setTitle:UnlocalizedString(@"Tempest")];
   [wnd makeKeyAndOrderFront:nil];
   [wnd setStyleMask:[wnd styleMask] | flags];
   [wnd setAcceptsMouseMovedEvents: YES];
@@ -239,6 +303,8 @@ static SystemApi::Window* createWindow(Tempest::Window *owner,
 
   [wnd setDelegate: delegate];
   [wnd orderFrontRegardless];
+
+  [delegate release];
 
   return reinterpret_cast<SystemApi::Window*>(wnd);
   }
@@ -288,13 +354,18 @@ MacOSApi::MacOSApi() {
   NSMenuItem * barItem = [NSMenuItem new];
   NSMenu*      menu    = [NSMenu new];
   NSMenuItem*  quit    = [[NSMenuItem alloc]
-                         initWithTitle:@"Quit"
+                         initWithTitle:UnlocalizedString(@"Quit")
                          action:@selector(terminate:)
                          keyEquivalent:@"q"];
   [bar     addItem:barItem];
   [barItem setSubmenu:menu];
   [menu    addItem:quit];
   NSApp.mainMenu = bar;
+
+  [quit release];
+  [menu release];
+  [barItem release];
+  [bar release];
 
   [NSApp setActivationPolicy:NSApplicationActivationPolicyRegular];
   [NSApp activateIgnoringOtherApps:YES];
@@ -319,10 +390,8 @@ SystemApi::Window *MacOSApi::implCreateWindow(Tempest::Window *owner, SystemApi:
   }
 
 void MacOSApi::implDestroyWindow(SystemApi::Window *w) {
-  NSWindow*              wnd   = reinterpret_cast<NSWindow*>(w);
-  TempestWindowDelegate* deleg = wnd.delegate;
-  [wnd   release];
-  [deleg release];
+  NSWindow* wnd   = reinterpret_cast<NSWindow*>(w);
+  [wnd release];
   }
 
 void MacOSApi::implExit() {
@@ -367,17 +436,15 @@ void MacOSApi::implSetCursorPosition(SystemApi::Window *w, int x, int y) {
   }
 
 void MacOSApi::implShowCursor(SystemApi::Window *w, CursorShape show) {
-  if(show==CursorShape::Hidden) {
-    CGDisplayHideCursor(kCGNullDirectDisplay);
-    return;
-    }
-  CGDisplayShowCursor(kCGNullDirectDisplay);
+  ::implShowCursor(w, show);
   }
 
 void MacOSApi::implSetWindowTitle(Window* w, const char* utf8) {
   NSWindow* wnd = reinterpret_cast<NSWindow*>(w);
   NSString* str = [NSString stringWithUTF8String:utf8];
-  [wnd setTitle: str];
+  if(str!=nil)
+    [wnd setTitle: str]; else
+    [wnd setTitle: @""];
   // apparently setTtile doesn't increnent ref-counter
   // [str release];
   }
@@ -601,7 +668,7 @@ void MacOSApi::implProcessEvents(SystemApi::AppCallBack&) {
           break;
           }
         default: break;
-		}
+        }
 
       auto isDown = evt.modifierFlags & flag;
       auto eType  = (isDown ? Event::KeyDown : Event::KeyUp);
@@ -613,8 +680,8 @@ void MacOSApi::implProcessEvents(SystemApi::AppCallBack&) {
       return;
       }
     case NSEventTypeAppKitDefined:
-      break;
     case NSEventTypeMouseEntered:
+      break;
     case NSEventTypeMouseExited:
       break;
 

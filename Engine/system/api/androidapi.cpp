@@ -479,6 +479,17 @@ static void useMusicVolumeControls() {
   g_app->activity->vm->DetachCurrentThread();
   }
 
+static void updateFocus() {
+  const bool active = g_isResumed && g_hasFocus;
+  if(g_isActive.load()==active)
+    return;
+  g_isActive.store(active);
+  AppEvent evt;
+  evt.type = AppEvent::Focus;
+  evt.data.focus.gained = active;
+  pushEvent(evt);
+  }
+
 // Handle application lifecycle commands
 static void onAppCmd(struct android_app* app, int32_t cmd) {
   switch (cmd) {
@@ -511,26 +522,14 @@ static void onAppCmd(struct android_app* app, int32_t cmd) {
 
     case APP_CMD_GAINED_FOCUS:
       g_hasFocus = true;
-      g_isActive.store(g_isResumed && g_hasFocus);
+      updateFocus();
       enableImmersiveMode();  // Re-enable immersive mode when focus is gained
-      {
-        AppEvent evt;
-        evt.type = AppEvent::Focus;
-        evt.data.focus.gained = true;
-        pushEvent(evt);
-      }
       LOGI("Focus gained");
       break;
 
     case APP_CMD_LOST_FOCUS:
       g_hasFocus = false;
-      g_isActive.store(false);
-      {
-        AppEvent evt;
-        evt.type = AppEvent::Focus;
-        evt.data.focus.gained = false;
-        pushEvent(evt);
-      }
+      updateFocus();
       LOGI("Focus lost");
       break;
 
@@ -540,7 +539,7 @@ static void onAppCmd(struct android_app* app, int32_t cmd) {
 
     case APP_CMD_RESUME:
       g_isResumed = true;
-      g_isActive.store(g_isResumed && g_hasFocus);
+      updateFocus();
       ANativeActivity_setWindowFlags(app->activity, AWINDOW_FLAG_KEEP_SCREEN_ON, 0);
 #if defined(TEMPEST_BUILD_AUDIO)
       SoundDevice::resumeAll();
@@ -551,7 +550,7 @@ static void onAppCmd(struct android_app* app, int32_t cmd) {
 
     case APP_CMD_PAUSE:
       g_isResumed = false;
-      g_isActive.store(false);
+      updateFocus();
 #if defined(TEMPEST_BUILD_AUDIO)
       SoundDevice::pauseAll();
 #endif
@@ -710,6 +709,8 @@ static int32_t onInputEvent(struct android_app* app, AInputEvent* event) {
 }
 
 static SystemApi::Window* createWindow(Tempest::Window* owner, uint32_t w, uint32_t h, SystemApi::ShowMode mode) {
+  if(g_mainWindow!=nullptr && g_mainWindow->owner!=nullptr)
+    return nullptr;
   if (g_mainWindow == nullptr) {
     g_mainWindow = new AndroidWindow();
   }
@@ -781,6 +782,7 @@ void AndroidApi::implDestroyWindow(SystemApi::Window* w) {
 
 void AndroidApi::implExit() {
   g_isRunning.store(false);
+  ALooper_wake(g_app->looper);
 }
 
 Tempest::Rect AndroidApi::implWindowClientRect(Window* w) {
@@ -817,21 +819,19 @@ bool AndroidApi::implIsRunning() {
 }
 
 int AndroidApi::implExec(AppCallBack& cb) {
-  g_isRunning.store(true);
-
   while (g_isRunning.load()) {
     // Process Android events
     int events;
     struct android_poll_source* source;
 
     // Poll with timeout when active, block when inactive
-    int timeout = g_isActive.load() ? 0 : -1;
+    int timeout = g_isActive.load() && g_hasWindow.load() ? 0 : -1;
     while (ALooper_pollOnce(timeout, nullptr, &events, reinterpret_cast<void**>(&source)) >= 0) {
       if (source != nullptr) {
         source->process(g_app, source);
       }
 
-      if (g_app->destroyRequested != 0) {
+      if (!g_isRunning.load() || g_app->destroyRequested != 0) {
         g_isRunning.store(false);
         break;
       }
@@ -846,7 +846,7 @@ int AndroidApi::implExec(AppCallBack& cb) {
     implProcessEvents(cb);
 
     // Run the timer callback (game loop)
-    if (g_isActive.load() && g_hasWindow.load()) {
+    if (g_isRunning.load() && g_isActive.load() && g_hasWindow.load()) {
       if (!cb.onTimer()) {
         std::this_thread::yield();
       }
@@ -857,6 +857,8 @@ int AndroidApi::implExec(AppCallBack& cb) {
 }
 
 void AndroidApi::implProcessEvents(AppCallBack& cb) {
+  if(!g_isRunning.load())
+    return;
   // Modal Tempest dialogs run their own event loop.
   // Keep Android input and lifecycle events moving while that loop is active.
   int events = 0;
@@ -864,7 +866,7 @@ void AndroidApi::implProcessEvents(AppCallBack& cb) {
   while(ALooper_pollOnce(0,nullptr,&events,reinterpret_cast<void**>(&source))>=0) {
     if(source!=nullptr)
       source->process(g_app,source);
-    if(g_app->destroyRequested!=0) {
+    if(!g_isRunning.load() || g_app->destroyRequested!=0) {
       g_isRunning.store(false);
       return;
       }
@@ -876,7 +878,7 @@ void AndroidApi::implProcessEvents(AppCallBack& cb) {
   auto& wnd = *g_mainWindow->owner;
   AppEvent evt;
 
-  while (popEvent(evt)) {
+  while (g_isRunning.load() && popEvent(evt)) {
     switch (evt.type) {
       case AppEvent::DisplayChanged: {
         if(g_hasWindow.load()) {
@@ -887,8 +889,10 @@ void AndroidApi::implProcessEvents(AppCallBack& cb) {
         break;
       }
       case AppEvent::Resize: {
-        SizeEvent e(evt.data.resize.w, evt.data.resize.h);
-        AndroidApi::dispatchResize(wnd, e, true);
+        if(g_hasWindow.load()) {
+          SizeEvent e(evt.data.resize.w, evt.data.resize.h);
+          AndroidApi::dispatchResize(wnd, e, true);
+          }
         break;
       }
 
@@ -949,7 +953,7 @@ void AndroidApi::implProcessEvents(AppCallBack& cb) {
   }
 
   // Trigger render if active
-  if (g_isActive.load() && g_hasWindow.load() && g_mainWindow->hasPendingFrame.load()) {
+  if (g_isRunning.load() && g_isActive.load() && g_hasWindow.load() && g_mainWindow->hasPendingFrame.load()) {
     g_mainWindow->hasPendingFrame.store(false);
     AndroidApi::dispatchRender(wnd);
     g_mainWindow->hasPendingFrame.store(true);
@@ -965,6 +969,7 @@ extern "C" void tempest_android_main(struct android_app* app);
 
 void tempest_android_main(struct android_app* app) {
   g_app = app;
+  g_isRunning.store(true);
   app->onAppCmd     = onAppCmd;
   app->onInputEvent = onInputEvent;
   useMusicVolumeControls();
