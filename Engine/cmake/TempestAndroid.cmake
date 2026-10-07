@@ -330,6 +330,7 @@ function(add_android_apk name)
   endif()
   _tempest_android_quote(MANIFEST "${manifest}")
   configure_file("${templates}/apk.gradle.in" "${output}/build.gradle" @ONLY NEWLINE_STYLE LF)
+  configure_file("${templates}/gradle-wrapper.properties" "${output}/gradle/wrapper/gradle-wrapper.properties" COPYONLY)
   find_program(TEMPEST_ANDROID_GRADLE_EXECUTABLE NAMES gradle gradle.bat HINTS "$ENV{GRADLE_HOME}/bin"
     DOC "Gradle executable used by the APK build target" NO_CMAKE_FIND_ROOT_PATH)
   if(TEMPEST_ANDROID_GRADLE_EXECUTABLE)
