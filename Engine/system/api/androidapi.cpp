@@ -25,6 +25,7 @@
 #include <string>
 #include <vector>
 #include <cmath>
+#include <cassert>
 #include <exception>
 #include <thread>
 #include <atomic>
@@ -118,6 +119,17 @@ static bool                 g_hasFocus  = false;
 static std::mutex           g_softInputMutex;
 static std::u32string       g_softInputText;
 static std::atomic_bool    g_softInputActive{false};
+
+std::filesystem::path AndroidApi::internalDataPath() {
+  assert(g_app!=nullptr && g_app->activity!=nullptr);
+  return g_app->activity->internalDataPath;
+  }
+
+std::filesystem::path AndroidApi::externalDataPath() {
+  assert(g_app!=nullptr && g_app->activity!=nullptr);
+  const char* path = g_app->activity->externalDataPath;
+  return path!=nullptr ? path : "";
+  }
 
 static std::mutex g_cutoutMutex;
 static struct {

@@ -27,7 +27,7 @@ void EventDispatcher::dispatchMouseDown(Widget& wnd, MouseEvent &e) {
                  Event::MouseDown );
   e1.ignore();
 
-  auto& btn = mouseUp[mouseCaptureKey(e.mouseID,e.button)];
+  std::weak_ptr<Widget::Ref> btn;
   for(auto i:overlays) {
     if(!i->bind(wnd))
       continue;
@@ -37,6 +37,7 @@ void EventDispatcher::dispatchMouseDown(Widget& wnd, MouseEvent &e) {
     if(e1.type()==MouseEvent::MouseDown) {
       mouseLast    = btn;
       mouseLastBtn = e.button;
+      mouseLastId  = e.mouseID;
       }
     }
 
@@ -52,7 +53,10 @@ void EventDispatcher::dispatchMouseDown(Widget& wnd, MouseEvent &e) {
     mouseLast     = btn;
     mouseLastTime = Application::tickCount();
     mouseLastBtn  = e.button;
+    mouseLastId   = e.mouseID;
     }
+
+  reset(e.mouseID, e.button, btn);
 
   if(auto w = btn.lock()) {
     if(w->widget->focusPolicy() & ClickFocus) {
@@ -64,13 +68,7 @@ void EventDispatcher::dispatchMouseDown(Widget& wnd, MouseEvent &e) {
 void EventDispatcher::dispatchMouseUp(Widget& /*wnd*/, MouseEvent &e) {
   ++mouseEvCount;
 
-  const auto key = mouseCaptureKey(e.mouseID,e.button);
-  auto       it  = mouseUp.find(key);
-  if(it==mouseUp.end())
-    return;
-  auto ptr = it->second;
-  mouseUp.erase(it);
-
+  std::weak_ptr<Widget::Ref> ptr = reset(e.mouseID, e.button);
   if(auto w = ptr.lock()) {
     auto p = e.pos() - w->widget->mapToRoot(Point());
     MouseEvent e1( p.x,
@@ -85,52 +83,41 @@ void EventDispatcher::dispatchMouseUp(Widget& /*wnd*/, MouseEvent &e) {
   }
 
 void EventDispatcher::dispatchMouseMove(Widget& wnd, MouseEvent &e) {
-  auto btn = e.button;
-  auto key = mouseCaptureKey(e.mouseID,btn);
-  auto it  = mouseUp.find(key);
-  if(btn==Event::ButtonNone) {
-    for(uint8_t i=0; i<Event::ButtonLast; ++i) {
-      auto candidate = mouseUp.find(mouseCaptureKey(e.mouseID,Event::MouseButton(i)));
-      if(candidate!=mouseUp.end() && !candidate->second.expired()) {
-        btn = Event::MouseButton(i);
-        key = candidate->first;
-        it  = candidate;
-        break;
-        }
+  auto btn = Event::ButtonLast;
+  for(auto& i:mouseUp)
+    if(i.id==e.mouseID && i.button<btn && !i.ref.expired()) {
+      btn = i.button;
       }
+  if(btn==Event::ButtonLast)
+    btn = Event::ButtonNone;
+
+  if(auto w = lock(e.mouseID,btn)) {
+    auto p = e.pos() - w->widget->mapToRoot(Point());
+    MouseEvent e0( p.x,
+                   p.y,
+                   btn,
+                   mkModifier(),
+                   e.delta,
+                   e.mouseID,
+                   Event::MouseDrag  );
+    w->widget->mouseDragEvent(e0);
+    if(e0.isAccepted())
+      return;
     }
 
-  if(it!=mouseUp.end()) {
-    if(auto w = lock(it->second)) {
-      auto p = e.pos() - w->widget->mapToRoot(Point());
-      MouseEvent e0( p.x,
-                     p.y,
-                     btn,
-                     mkModifier(),
-                     e.delta,
-                     e.mouseID,
-                     Event::MouseDrag  );
-      w->widget->mouseDragEvent(e0);
-      if(e0.isAccepted())
-        return;
-      }
-    }
-
-  if(it!=mouseUp.end()) {
-    if(auto w = lock(it->second)) {
-      auto p = e.pos() - w->widget->mapToRoot(Point());
-      MouseEvent e1( p.x,
-                     p.y,
-                     btn,
-                     e.modifier,
-                     e.delta,
-                     e.mouseID,
-                     Event::MouseMove  );
-      w->widget->mouseMoveEvent(e1);
-      if(e.isAccepted()) {
-        implSetMouseOver(it->second.lock(),e);
-        return;
-        }
+  if(auto w = lock(e.mouseID,btn)) {
+    auto p = e.pos() - w->widget->mapToRoot(Point());
+    MouseEvent e1( p.x,
+                   p.y,
+                   btn,
+                   e.modifier,
+                   e.delta,
+                   e.mouseID,
+                   Event::MouseMove  );
+    w->widget->mouseMoveEvent(e1);
+    if(e.isAccepted()) {
+      implSetMouseOver(lock(e.mouseID,btn),e);
+      return;
       }
     }
 
@@ -152,10 +139,6 @@ void EventDispatcher::dispatchMouseMove(Widget& wnd, MouseEvent &e) {
     }
   auto wptr = implDispatch(wnd,e1);
   implSetMouseOver(wptr,e1);
-  }
-
-uint64_t EventDispatcher::mouseCaptureKey(int mouseId, Event::MouseButton button) {
-  return (uint64_t(uint32_t(mouseId))<<32) | uint32_t(button);
   }
 
 void EventDispatcher::dispatchMouseWheel(Widget& wnd, MouseEvent &e) {
@@ -326,7 +309,7 @@ std::shared_ptr<Widget::Ref> EventDispatcher::implDispatch(Widget& w, MouseEvent
       auto     last     = mouseLast.lock();
       bool     dblClick = false;
       uint64_t time     = Application::tickCount();
-      if(time-mouseLastTime<1000 && mouseLastBtn==event.button && last!=nullptr && last->widget==it.owner) {
+      if(time-mouseLastTime<1000 && mouseLastBtn==event.button && mouseLastId==event.mouseID && last!=nullptr && last->widget==it.owner) {
         dblClick = true;
         }
       event.accept();
@@ -541,6 +524,29 @@ std::shared_ptr<Widget::Ref> EventDispatcher::lock(std::weak_ptr<Widget::Ref>& w
   if(dynamic_cast<Window*>(wx) || dynamic_cast<UiOverlay*>(wx) || wx==customRoot)
     return ptr;
   return nullptr;
+  }
+
+std::shared_ptr<Widget::Ref> EventDispatcher::lock(int id, Event::MouseButton button) {
+  for(auto& i:mouseUp)
+    if(i.id==id && i.button==button)
+      return lock(i.ref);
+  return nullptr;
+  }
+
+std::weak_ptr<Widget::Ref> EventDispatcher::reset(int id, Event::MouseButton button, const std::weak_ptr<Widget::Ref>& w) {
+  for(auto i=mouseUp.begin(); i!=mouseUp.end(); ++i)
+    if(i->id==id && i->button==button) {
+      auto ptr = i->ref;
+      if(w.expired()) {
+        mouseUp.erase(i);
+        } else {
+        i->ref = w;
+        }
+      return ptr.lock();
+      }
+  if(!w.expired())
+    mouseUp.push_back({button,id,w});
+  return {};
   }
 
 Event::Modifier EventDispatcher::mkModifier() const {
