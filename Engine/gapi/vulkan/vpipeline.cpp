@@ -322,6 +322,9 @@ VkPipeline VPipeline::initGraphicsPipeline(VDevice& device,
     }
 
   VkPipeline graphicsPipeline = VK_NULL_HANDLE;
+  std::unique_lock<std::mutex> pipelineGuard(device.pipelineCreationSync,std::defer_lock);
+  if(device.serializePipelineCreation)
+    pipelineGuard.lock();
   const auto err = vkCreateGraphicsPipelines(device.device.impl,VK_NULL_HANDLE,1,&pipelineInfo,nullptr,&graphicsPipeline);
   if(err!=VK_SUCCESS)
     throw std::system_error(Tempest::GraphicsErrc::InvalidShaderModule);
@@ -419,6 +422,9 @@ VCompPipeline::VCompPipeline(VDevice& device, const VShader& comp)
       createFlags2.pNext = info.pNext;
       info.pNext         = &createFlags2;
       }
+    std::unique_lock<std::mutex> pipelineGuard(device.pipelineCreationSync,std::defer_lock);
+    if(device.serializePipelineCreation)
+      pipelineGuard.lock();
     const auto err = vkCreateComputePipelines(dev, VK_NULL_HANDLE, 1, &info, nullptr, &impl);
     if(err!=VK_SUCCESS)
       throw std::system_error(Tempest::GraphicsErrc::InvalidShaderModule);
@@ -477,6 +483,9 @@ VkPipeline VCompPipeline::instance(VkPipelineLayout pLay) {
     info.flags              = VK_PIPELINE_CREATE_DERIVATIVE_BIT;
     info.basePipelineHandle = impl;
     info.basePipelineIndex  = -1;
+    std::unique_lock<std::mutex> pipelineGuard(device.pipelineCreationSync,std::defer_lock);
+    if(device.serializePipelineCreation)
+      pipelineGuard.lock();
     const auto err = vkCreateComputePipelines(dev, VK_NULL_HANDLE, 1, &info, nullptr, &val);
     if(err!=VK_SUCCESS)
       throw std::system_error(Tempest::GraphicsErrc::InvalidShaderModule);
