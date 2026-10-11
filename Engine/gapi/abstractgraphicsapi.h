@@ -531,6 +531,10 @@ namespace Tempest {
         };
       struct Swapchain:NoCopy {
         virtual ~Swapchain()=default;
+        // HDR is opt-in; backends without an HDR output path remain SDR.
+        virtual void     setHdr(bool) {}
+        virtual bool     isHdr() const { return false; }
+        virtual float    hdrMaxLuminance() const { return 0.f; }
         virtual void     reset()=0;
         virtual uint32_t w() const=0;
         virtual uint32_t h() const=0;

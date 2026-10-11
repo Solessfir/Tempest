@@ -263,6 +263,23 @@ Java_org_tempest_TempestNativeActivity_nativeEditorAction(JNIEnv*, jobject) {
     ALooper_wake(app->looper);
   }
 
+extern "C" float tempest_android_hdr_peak_luminance() {
+  JniEnv jni;
+  if(jni.env==nullptr)
+    return 0.f;
+  jobject   activity = app->activity->clazz;
+  jclass    cls      = jni.env->GetObjectClass(activity);
+  jmethodID method   = cls==nullptr ? nullptr : jni.env->GetMethodID(cls,"getHdrPeakLuminance","()F");
+  float     peak     = method==nullptr ? 0.f : jni.env->CallFloatMethod(activity,method);
+  if(jni.env->ExceptionCheck()) {
+    jni.env->ExceptionClear();
+    peak = 0.f;
+    }
+  if(cls!=nullptr)
+    jni.env->DeleteLocalRef(cls);
+  return peak;
+  }
+
 AndroidApi::AndroidApi() {
   static const TranslateKeyPair k[] = {
     { AKEYCODE_CTRL_LEFT,   Event::K_LControl },
