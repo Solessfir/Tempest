@@ -50,6 +50,8 @@ class VCommandBuffer:public AbstractGraphicsApi::CommandBuffer {
     void setViewport(const Rect& r) override;
     void setScissor (const Rect& r) override;
     void setDebugMarker(std::string_view tag) override;
+    void setGpuProfilingEnabled(bool enabled) override;
+    std::vector<AbstractGraphicsApi::GpuTiming> gpuTimings() const override;
 
     void setPipeline(AbstractGraphicsApi::Pipeline& p) override;
     void setComputePipeline(AbstractGraphicsApi::CompPipeline& p) override;
@@ -157,6 +159,16 @@ class VCommandBuffer:public AbstractGraphicsApi::CommandBuffer {
     VkPipelineLayout                        pipelineLayout  = VK_NULL_HANDLE;
 
     bool                                    isDbgRegion = false;
+
+    // Owned by this command buffer and reused only after its submission is complete.
+    static constexpr uint32_t               MaxProfileQueries = 256;
+    VkQueryPool                             profilePool = VK_NULL_HANDLE;
+    std::vector<std::string>                 profileLabels;
+    float                                   timestampPeriod = 0;
+    uint32_t                                timestampValidBits = 0;
+    bool                                    profileRequested = false;
+    bool                                    profileInitialized = false;
+    bool                                    profileComplete = false;
   };
 
 }}
