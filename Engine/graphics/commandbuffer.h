@@ -25,7 +25,13 @@ class CommandBuffer final {
     ~CommandBuffer();
     CommandBuffer& operator = (CommandBuffer&& other)=default;
 
-    auto startEncoding(Tempest::Device& dev) -> Encoder<CommandBuffer>;
+    // Optional Vulkan timestamps measure elapsed intervals between debug markers.
+    // Unsupported backends return no timings and keep rendering normally.
+    auto startEncoding(Tempest::Device& dev, bool gpuProfiling = false) -> Encoder<CommandBuffer>;
+
+    // Call after this command buffer's submission fence completes, before re-encoding.
+    // Does not wait for the GPU; disabled, incomplete or unavailable results are empty.
+    std::vector<AbstractGraphicsApi::GpuTiming> gpuTimings() const;
 
   private:
     CommandBuffer(Tempest::Device& dev, AbstractGraphicsApi::CommandBuffer* impl);

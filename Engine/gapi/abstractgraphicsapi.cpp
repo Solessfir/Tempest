@@ -85,6 +85,14 @@ void AbstractGraphicsApi::CommandBuffer::setDebugMarker(std::string_view tag) {
   (void)tag;
   }
 
+void AbstractGraphicsApi::CommandBuffer::setGpuProfilingEnabled(bool enabled) {
+  (void)enabled;
+  }
+
+std::vector<AbstractGraphicsApi::GpuTiming> AbstractGraphicsApi::CommandBuffer::gpuTimings() const {
+  return {};
+  }
+
 void AbstractGraphicsApi::CommandBuffer::dispatchMesh(size_t x, size_t y, size_t z) {
   throw std::system_error(Tempest::GraphicsErrc::UnsupportedExtension);
   }
