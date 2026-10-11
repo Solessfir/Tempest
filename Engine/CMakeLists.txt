@@ -159,6 +159,16 @@ if(TEMPEST_BUILD_VULKAN)
   add_definitions(-DVULKAN_HPP_NO_EXCEPTIONS)
   add_definitions(-DVULKAN_HPP_NO_SMART_HANDLE)
 
+  if(ANDROID AND NOT DEFINED ENV{VULKAN_SDK})
+    # The NDK Vulkan headers lag extensions referenced by Tempest.
+    # Use a pinned Khronos header release while continuing to link Android's loader.
+    include(FetchContent)
+    FetchContent_Declare(VkHeaders
+        URL "https://github.com/KhronosGroup/Vulkan-Headers/archive/refs/tags/vulkan-sdk-1.4.357.0.zip"
+        URL_HASH SHA256=BC7925A17854A9BAC9433309E8DF88A701EF1D49D2020FFF6DB9407B637EA840)
+    FetchContent_MakeAvailable(VkHeaders)
+    target_include_directories(${PROJECT_NAME} BEFORE PRIVATE "${vkheaders_SOURCE_DIR}/include")
+  endif()
   if(NOT ANDROID)
     if("${CMAKE_SIZEOF_VOID_P}" EQUAL "8")
       target_link_directories(${PROJECT_NAME} PRIVATE "$ENV{VULKAN_SDK}/lib")
@@ -240,9 +250,17 @@ file(GLOB SHADER_SOURCES
 
 # GLSL to SPIRV compiler
 find_program(GLSLANGVALIDATOR glslangValidator "/opt/homebrew/bin")
+if(NOT GLSLANGVALIDATOR AND ANDROID)
+  # The NDK ships glslc, so Android builds do not need a Vulkan SDK
+  find_program(GLSLANGVALIDATOR glslc
+    "${ANDROID_NDK}/shader-tools/windows-x86_64"
+    "${ANDROID_NDK}/shader-tools/linux-x86_64"
+    "${ANDROID_NDK}/shader-tools/darwin-x86_64")
+endif()
 if(NOT GLSLANGVALIDATOR)
   message(FATAL_ERROR "glslangValidator required")
 endif()
+get_filename_component(SHADER_COMPILER_NAME "${GLSLANGVALIDATOR}" NAME_WE)
 
 function(add_shader OUTPUT SOURCE)
   set(OUTPUT_FILE "${PROJECT_BINARY_DIR}/sprv/${OUTPUT}")
@@ -251,11 +269,16 @@ function(add_shader OUTPUT SOURCE)
   set(SHADERS_SPRV ${SHADERS_SPRV} ${OUTPUT_FILE} PARENT_SCOPE)
 
   list(SUBLIST ARGV 2 -1 VARS)
+  if(SHADER_COMPILER_NAME STREQUAL "glslc")
+    set(SHADER_VULKAN_FLAG "")
+  else()
+    set(SHADER_VULKAN_FLAG "-V")
+  endif()
   add_custom_command(
     OUTPUT     ${OUTPUT_FILE}
     DEPENDS    ${SOURCE_FILE}
     COMMAND    ${CMAKE_COMMAND} -E make_directory "${PROJECT_BINARY_DIR}/sprv/"
-    COMMAND    ${GLSLANGVALIDATOR} -V ${VARS} "${SOURCE_FILE}" -o ${OUTPUT_FILE}
+    COMMAND    ${GLSLANGVALIDATOR} ${SHADER_VULKAN_FLAG} ${VARS} "${SOURCE_FILE}" -o ${OUTPUT_FILE}
     )
 endfunction(add_shader)
 
