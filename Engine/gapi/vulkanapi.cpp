@@ -143,6 +143,10 @@ struct Tempest::VulkanApi::Impl {
       rqExt.push_back(VK_EXT_DEBUG_REPORT_EXTENSION_NAME);
       }
 
+#if defined(__ANDROID__)
+    if(extensionSupport(ext, VK_EXT_SWAPCHAIN_COLOR_SPACE_EXTENSION_NAME))
+      rqExt.push_back(VK_EXT_SWAPCHAIN_COLOR_SPACE_EXTENSION_NAME);
+#endif
     if(extensionSupport(ext, VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME)) {
       rqExt.push_back(VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME);
       hasDeviceFeatures2 = true;

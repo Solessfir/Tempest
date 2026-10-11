@@ -48,3 +48,16 @@ Attachment& Swapchain::acquire() {
   ret = Attachment(impl.handler, impl.handler->currentBackBuffer());
   return ret;
   }
+
+void Swapchain::setHdr(bool enabled) {
+  impl.handler->setHdr(enabled);
+  implReset();
+  }
+
+bool Swapchain::isHdr() const {
+  return impl.handler->isHdr();
+  }
+
+float Swapchain::hdrMaxLuminance() const {
+  return impl.handler->hdrMaxLuminance();
+  }
