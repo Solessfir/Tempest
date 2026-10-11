@@ -29,8 +29,8 @@ function(add_android_apk name)
   if(NOT ANDROID)
     message(FATAL_ERROR "add_android_apk requires an Android NDK build")
   endif()
-  cmake_parse_arguments(APP "SHRINK_RELEASE"
-    "PACKAGE_NAME;CODE;MANIFEST;VERSION_CODE;VERSION_NAME;PROPERTY_PREFIX;SIGNING_ENV_PREFIX;NATIVE_SYMBOLS"
+  cmake_parse_arguments(APP "SHRINK_RELEASE;ANDROIDX"
+    "PACKAGE_NAME;CODE;MANIFEST;VERSION_CODE;VERSION_NAME;PROPERTY_PREFIX;SIGNING_ENV_PREFIX;NATIVE_SYMBOLS;ASSET_PROPERTY"
     "JAVA_DIRS;RESOURCE_DIRS;ASSET_DIRS;DEPENDENCIES;CMAKE_ARGUMENTS;CPP_FLAGS;PROGUARD_FILES;NO_COMPRESS" ${ARGN})
   if(APP_UNPARSED_ARGUMENTS OR APP_KEYWORDS_MISSING_VALUES)
     message(FATAL_ERROR "Invalid arguments to add_android_apk: ${APP_UNPARSED_ARGUMENTS};${APP_KEYWORDS_MISSING_VALUES}")
@@ -167,7 +167,7 @@ function(add_android_apk name)
   list(PREPEND APP_CMAKE_ARGUMENTS "-DCMAKE_ANDROID_STL_TYPE=${CMAKE_ANDROID_STL_TYPE}"
     "-DANDROID_STL=${CMAKE_ANDROID_STL_TYPE}")
   list(APPEND APP_CMAKE_ARGUMENTS "-DTEMPEST_ANDROID_GRADLE_BUILD=ON")
-  foreach(value APPLICATION_ID VERSION_NAME PROPERTY_PREFIX SIGNING_ENV_PREFIX NATIVE_TARGET NATIVE_SYMBOLS)
+  foreach(value APPLICATION_ID VERSION_NAME PROPERTY_PREFIX SIGNING_ENV_PREFIX NATIVE_TARGET NATIVE_SYMBOLS ASSET_PROPERTY)
     _tempest_android_quote(${value} "${APP_${value}}")
   endforeach()
   _tempest_android_quote(NATIVE_CMAKE "${CMAKE_SOURCE_DIR}/CMakeLists.txt")
@@ -183,6 +183,13 @@ function(add_android_apk name)
   endif()
   _tempest_android_quote(MANIFEST "${manifest}")
   configure_file("${templates}/build.gradle.in" "${output}/build.gradle" @ONLY NEWLINE_STYLE LF)
+  # Libraries such as Material Components require AndroidX
+  if(APP_ANDROIDX)
+    file(WRITE "${output}/gradle.properties" "android.useAndroidX=true
+")
+  else()
+    file(REMOVE "${output}/gradle.properties")
+  endif()
   configure_file("${templates}/gradle-wrapper.properties" "${output}/gradle/wrapper/gradle-wrapper.properties" COPYONLY)
   find_program(TEMPEST_ANDROID_GRADLE_EXECUTABLE NAMES gradle gradle.bat HINTS "$ENV{GRADLE_HOME}/bin"
     DOC "Gradle executable used by the APK build target" NO_CMAKE_FIND_ROOT_PATH)

@@ -27,6 +27,17 @@ if (signingValues.any { it != null } && signingValues.any { !it }) {
     throw new GradleException('Set all four ' + signingPrefix + ' signing variables, or leave all unset for local signing.')
 }
 def propertyPrefix = @PROPERTY_PREFIX@
+// Optional Gradle property naming an extra asset directory, e.g. data that must not be in the repository
+def assetProperty = @ASSET_PROPERTY@
+def extraAssets = assetProperty ? providers.gradleProperty(assetProperty).orNull : null
+// Multi-gigabyte asset directories need full repackaging to avoid stale ZIP offsets
+if (extraAssets) {
+    tasks.configureEach {
+        if (name == 'packageDebug' || name == 'packageRelease') {
+            outputs.upToDateWhen { false }
+        }
+    }
+}
 
 android {
     namespace @APPLICATION_ID@
@@ -92,6 +103,9 @@ android {
             java.srcDirs = @JAVA_DIRS@
             res.srcDirs = @RESOURCE_DIRS@
             assets.srcDirs = @ASSET_DIRS@
+            if (extraAssets) {
+                assets.srcDir file(extraAssets)
+            }
         }
     }
     androidResources {
