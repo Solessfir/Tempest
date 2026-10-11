@@ -15,11 +15,13 @@ class AndroidApi final : SystemApi {
     static ANativeWindow*        nativeWindow(SystemApi::Window* w);
 
   private:
-    AndroidApi() = default;
+    AndroidApi();
 
     static Window* createAndroidWindow(Tempest::Window* owner);
     static void onAppCmd(void* app, int32_t cmd);
     static int32_t onInputEvent(const void* event);
+    static int32_t onKeyEvent(const void* event);
+    static bool processKeyEvents();
     static bool processTouchEvents(AppCallBack& cb);
     static void updateFocus();
     static void updateWindow();
@@ -31,6 +33,7 @@ class AndroidApi final : SystemApi {
 
     Rect implWindowClientRect(SystemApi::Window* w) override;
     float implUiScale(SystemApi::Window* w) override;
+    Rect implWindowSafeArea(SystemApi::Window* w) override;
     bool implSetAsFullscreen(SystemApi::Window* w, bool fullScreen) override;
     bool implIsFullscreen(SystemApi::Window* w) override;
 
@@ -42,6 +45,11 @@ class AndroidApi final : SystemApi {
     void implProcessEvents(AppCallBack& cb) override;
 
     void implSetWindowTitle(SystemApi::Window* w, const char* utf8) override;
+
+    GamepadState implGamepadState() override;
+    void         implVibrate(uint32_t milliseconds, float strength, bool gamepad) override;
+    void         implShowSoftInput(std::string_view text) override;
+    void         implHideSoftInput() override;
 
   friend class SystemApi;
   };

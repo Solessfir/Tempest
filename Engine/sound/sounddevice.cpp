@@ -96,6 +96,11 @@ struct SoundDevice::PhysicalDeviceList {
     val = vx;
     return vx;
     }
+
+  std::shared_ptr<SoundDevice::Device> activeDevice() {
+    std::lock_guard<std::mutex> guard(sync);
+    return val.lock();
+    }
   };
 
 SoundDevice::SoundDevice():SoundDevice("") {
@@ -195,6 +200,16 @@ std::vector<SoundDevice::Props> SoundDevice::devices() {
     }
 
   return ret;
+  }
+
+void SoundDevice::pauseAll() {
+  if(auto dev = PhysicalDeviceList::inst().activeDevice())
+    alcDevicePauseSOFT(dev->dev);
+  }
+
+void SoundDevice::resumeAll() {
+  if(auto dev = PhysicalDeviceList::inst().activeDevice())
+    alcDeviceResumeSOFT(dev->dev);
   }
 
 SoundEffect SoundDevice::load(const char *fname) {
