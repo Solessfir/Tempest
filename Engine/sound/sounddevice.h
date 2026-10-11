@@ -25,6 +25,8 @@ class SoundDevice final {
       };
 
     static std::vector<Props> devices();
+    static void pauseAll();
+    static void resumeAll();
 
     SoundDevice& operator = ( const SoundDevice& s) = delete;
 
