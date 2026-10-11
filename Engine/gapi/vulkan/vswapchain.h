@@ -30,6 +30,9 @@ class VSwapchain : public AbstractGraphicsApi::Swapchain {
     uint32_t                 h()      const override { return swapChainExtent.height; }
 
     void                     reset() override;
+    void                     setHdr(bool enabled) override;
+    bool                     isHdr() const override { return hdrActive; }
+    float                    hdrMaxLuminance() const override { return hdrActive ? hdrPeak : 0.f; }
     uint32_t                 imageCount() const override { return uint32_t(imageList.views.size()); }
 
     uint32_t                 currentBackBufferIndex() override;
@@ -117,6 +120,9 @@ class VSwapchain : public AbstractGraphicsApi::Swapchain {
 
     uint32_t                 imgIndex = 0;
     uint32_t                 frameId  = 0;
+    bool                     hdrRequested = false;
+    bool                     hdrActive = false;
+    float                    hdrPeak = 0.f;
 
     VkFormat                 swapChainImageFormat = VK_FORMAT_UNDEFINED;
     VkExtent2D               swapChainExtent = {};
@@ -131,7 +137,7 @@ class VSwapchain : public AbstractGraphicsApi::Swapchain {
     void                     createSwapchain(VDevice& device);
     VkResult                 createSwapchain(VDevice& device, const SwapChainSupport& support, const Rect& rect);
 
-    VkSurfaceFormatKHR       findSwapSurfaceFormat(const std::vector<VkSurfaceFormatKHR>& availableFormats) const;
+    VkSurfaceFormatKHR       findSwapSurfaceFormat(const std::vector<VkSurfaceFormatKHR>& availableFormats);
     VkPresentModeKHR         findSwapPresentMode(const std::vector<VkPresentModeKHR>& availablePresentModes) const;
     VkCompositeAlphaFlagBitsKHR findAlphaMode(VkCompositeAlphaFlagsKHR supported) const;
     VkExtent2D               findSwapExtent(const VkSurfaceCapabilitiesKHR &capabilities, uint32_t w, uint32_t h) const;
