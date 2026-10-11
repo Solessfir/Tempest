@@ -31,6 +31,7 @@ class Window : public Widget {
     ~Window() override;
 
     void setWindowTitle(const char* utf8);
+    Rect safeArea() const { return SystemApi::windowSafeArea(id); }
 
     // App and platform restrictions still apply. AllOrientations restores the
     // app defaults. Has no effect on platforms without orientation support.
