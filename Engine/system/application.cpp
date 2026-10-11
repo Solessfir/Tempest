@@ -1,6 +1,7 @@
 #include "application.h"
 
 #include <Tempest/SystemApi>
+#include <Tempest/CpuTrace>
 #include <Tempest/Timer>
 #include <Tempest/Style>
 #include <Tempest/Font>
@@ -101,6 +102,11 @@ Application::~Application(){
   }
 
 void Application::sleep(uint32_t msecIn) {
+  CpuTrace trace("Tempest::sleep");
+#if defined(__ANDROID__)
+  // Sleeping on Android must not spend the final milliseconds continuously polling the clock.
+  std::this_thread::sleep_for(std::chrono::milliseconds(msecIn));
+#else
   const auto     start         = std::chrono::steady_clock::now();
   const auto     wtime         = std::chrono::milliseconds(msecIn);
   const uint32_t wtGranularity = 5;
@@ -114,6 +120,7 @@ void Application::sleep(uint32_t msecIn) {
     if(ms>=wtime)
       break;
     }
+#endif
   }
 
 uint64_t Application::tickCount() {
