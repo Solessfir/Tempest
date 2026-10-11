@@ -146,8 +146,8 @@ void SystemApi::dispatchKeyUp(Tempest::Window &cb, KeyEvent &e, uint32_t scancod
   dispatcher.dispatchKeyUp(cb,e,scancode);
   }
 
-void SystemApi::dispatchResize(Tempest::Window& cb, SizeEvent& e) {
-  dispatcher.dispatchResize(cb,e);
+void SystemApi::dispatchResize(Tempest::Window& cb, SizeEvent& e, bool force) {
+  dispatcher.dispatchResize(cb,e,force);
   }
 
 void SystemApi::dispatchClose(Tempest::Window& cb, CloseEvent& e) {
@@ -187,6 +187,15 @@ void SystemApi::processEvent(AppCallBack& cb) {
   return inst().implProcessEvents(cb);
   }
 
+Rect SystemApi::windowSafeArea(SystemApi::Window* w) {
+  return inst().implWindowSafeArea(w);
+  }
+
+Rect SystemApi::implWindowSafeArea(SystemApi::Window* w) {
+  const auto client = implWindowClientRect(w);
+  return Rect(0,0,client.w,client.h);
+  }
+
 Rect SystemApi::windowClientRect(SystemApi::Window* w) {
   return inst().implWindowClientRect(w);
   }
@@ -221,4 +230,34 @@ CursorShape SystemApi::cursorShape(Tempest::Window& cb) {
 
 float SystemApi::uiScale(Window* w) {
   return inst().implUiScale(w);
+  }
+
+GamepadState SystemApi::gamepadState() {
+  return inst().implGamepadState();
+  }
+
+void SystemApi::vibrate(uint32_t milliseconds, float strength, bool gamepad) {
+  inst().implVibrate(milliseconds,strength,gamepad);
+  }
+
+void SystemApi::implVibrate(uint32_t, float, bool) {
+  }
+
+GamepadState SystemApi::implGamepadState() {
+  // Default implementation returns disconnected gamepad
+  return GamepadState{};
+  }
+
+void SystemApi::showSoftInput(std::string_view text) {
+  inst().implShowSoftInput(text);
+  }
+
+void SystemApi::hideSoftInput() {
+  inst().implHideSoftInput();
+  }
+
+void SystemApi::implShowSoftInput(std::string_view) {
+  }
+
+void SystemApi::implHideSoftInput() {
   }
