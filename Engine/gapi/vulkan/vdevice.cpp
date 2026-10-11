@@ -85,6 +85,9 @@ VDevice::VDevice(VkInstance instance, const bool hasDeviceFeatures2, VkPhysicalD
     fboMap(*this), setLayouts(*this), psoLayouts(*this), descPool(*this) {
   deviceProps(instance, hasDeviceFeatures2, pdev, props);
   deviceQueueProps(pdev, props);
+  serializePipelineCreation = std::strstr(props.name,"Adreno")!=nullptr && std::strstr(props.name,"610")!=nullptr;
+  if(serializePipelineCreation)
+    Log::i("Serializing Vulkan pipeline creation for ",props.name);
 
   createLogicalDevice(pdev);
   vkGetPhysicalDeviceMemoryProperties(pdev, &memoryProperties);
