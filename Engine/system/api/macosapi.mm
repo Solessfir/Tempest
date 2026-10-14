@@ -131,6 +131,7 @@ static NSCursor* toNSCursor(CursorShape show) {
     case CursorShape::SizeBDiag:
     case CursorShape::SizeFDiag:
     case CursorShape::SizeAll:
+    case CursorShape::Custom:
       return [NSCursor arrowCursor];
     }
   return [NSCursor arrowCursor];

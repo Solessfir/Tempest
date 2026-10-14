@@ -24,6 +24,10 @@ SystemApi::Data SystemApi::m;
 SystemApi::SystemApi() {
   }
 
+void SystemApi::implSetCustomCursor(const Pixmap&, int, int) {
+  // not implemented on this platform: CursorShape::Custom shows the arrow
+  }
+
 float SystemApi::implUiScale(Window* w) {
   // default to 1.0, on platforms without hidpi implementation
   return 1;
@@ -222,6 +226,10 @@ void SystemApi::setCursorPosition(SystemApi::Window *w, int x, int y) {
 
 void SystemApi::showCursor(SystemApi::Window *w, CursorShape show) {
   return inst().implShowCursor(w,show);
+  }
+
+void SystemApi::setCustomCursor(const Pixmap& image, int hotX, int hotY) {
+  return inst().implSetCustomCursor(image,hotX,hotY);
   }
 
 CursorShape SystemApi::cursorShape(Tempest::Window& cb) {

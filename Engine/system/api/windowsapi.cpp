@@ -3,6 +3,7 @@
 #ifdef __WINDOWS__
 
 #include <Tempest/Event>
+#include <Tempest/Pixmap>
 #include <Tempest/Except>
 #include <Tempest/TextCodec>
 #include <Tempest/Window>
@@ -318,7 +319,13 @@ void WindowsApi::implSetCursorPosition(SystemApi::Window *w, int x, int y) {
     }
   }
 
+static HCURSOR customCursor = nullptr;
+
 static void SetCursor(CursorShape show) {
+  if(show==CursorShape::Custom && customCursor!=nullptr) {
+    SetCursor(customCursor);
+    return;
+    }
   LPSTR idc = IDC_ARROW;
   switch(show) {
     case Tempest::CursorShape::Arrow:
@@ -345,6 +352,9 @@ static void SetCursor(CursorShape show) {
     case Tempest::CursorShape::SizeAll:
       idc = IDC_SIZEALL;
       break;
+    case Tempest::CursorShape::Custom:
+      idc = IDC_ARROW;
+      break;
     }
   HCURSOR hcur = idc==nullptr ? nullptr : LoadCursorA(nullptr, idc);
   SetCursor(hcur);
@@ -352,6 +362,60 @@ static void SetCursor(CursorShape show) {
 
 void WindowsApi::implShowCursor(SystemApi::Window*, CursorShape show) {
   SetCursor(show);
+  }
+
+void WindowsApi::implSetCustomCursor(const Pixmap& image, int hotX, int hotY) {
+  if(customCursor!=nullptr) {
+    DestroyCursor(customCursor);
+    customCursor = nullptr;
+    }
+  if(image.isEmpty() || image.format()!=TextureFormat::RGBA8)
+    return;
+
+  const int w = int(image.w());
+  const int h = int(image.h());
+
+  BITMAPV5HEADER bi = {};
+  bi.bV5Size        = sizeof(bi);
+  bi.bV5Width       = w;
+  bi.bV5Height      = -h; // top-down rows, as in Pixmap
+  bi.bV5Planes      = 1;
+  bi.bV5BitCount    = 32;
+  bi.bV5Compression = BI_BITFIELDS;
+  bi.bV5RedMask     = 0x00FF0000;
+  bi.bV5GreenMask   = 0x0000FF00;
+  bi.bV5BlueMask    = 0x000000FF;
+  bi.bV5AlphaMask   = 0xFF000000;
+
+  void*   bits  = nullptr;
+  HDC     dc    = GetDC(nullptr);
+  HBITMAP color = CreateDIBSection(dc, reinterpret_cast<BITMAPINFO*>(&bi), DIB_RGB_COLORS, &bits, nullptr, 0);
+  ReleaseDC(nullptr, dc);
+  if(color==nullptr)
+    return;
+
+  auto src = reinterpret_cast<const uint8_t*>(image.data());
+  auto dst = reinterpret_cast<uint8_t*>(bits);
+  for(size_t i=0; i<size_t(w*h); ++i) {
+    dst[i*4+0] = src[i*4+2];
+    dst[i*4+1] = src[i*4+1];
+    dst[i*4+2] = src[i*4+0];
+    dst[i*4+3] = src[i*4+3];
+    }
+
+  // A 32-bit color bitmap with alpha takes precedence over the mask, which only needs to exist.
+  HBITMAP mask = CreateBitmap(w, h, 1, 1, nullptr);
+
+  ICONINFO info = {};
+  info.fIcon    = FALSE;
+  info.xHotspot = DWORD(hotX);
+  info.yHotspot = DWORD(hotY);
+  info.hbmMask  = mask;
+  info.hbmColor = color;
+  customCursor = CreateIconIndirect(&info);
+
+  DeleteObject(color);
+  DeleteObject(mask);
   }
 
 long long WindowsApi::windowProc(void *_hWnd, uint32_t msg, const unsigned long long wParam, const long long lParam) {

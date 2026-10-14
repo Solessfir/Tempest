@@ -476,6 +476,7 @@ void X11Api::implShowCursor(SystemApi::Window *w, CursorShape show) {
     switch(show) {
       case CursorShape::Arrow:
       case CursorShape::Hidden:
+      case CursorShape::Custom:
         break;
       case CursorShape::IBeam:
         name = "xterm";
