@@ -159,6 +159,7 @@ void SystemApi::dispatchClose(Tempest::Window& cb, CloseEvent& e) {
   }
 
 void SystemApi::dispatchFocus(Tempest::Window& cb, FocusEvent& e) {
+  cb.active = e.in;
   dispatcher.dispatchFocus(cb,e);
   }
 
