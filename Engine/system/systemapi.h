@@ -12,6 +12,8 @@
 
 namespace Tempest {
 
+class Pixmap;
+
 struct GamepadState {
   enum Button : uint32_t {
     A=1u<<0, B=1u<<1, X=1u<<2, Y=1u<<3,
@@ -95,6 +97,7 @@ class SystemApi {
     static void     setWindowTitle(SystemApi::Window *w, const char* utf8);
     static void     setAllowedOrientations(SystemApi::Window *w, Orientation orientations);
     static float    uiScale(SystemApi::Window *w);
+    static void     setCustomCursor(const Pixmap& image, int hotX, int hotY);
 
     static uint16_t translateKey(uint64_t scancode);
     static void     setupKeyTranslate(const TranslateKeyPair k[], uint16_t funcCount);
@@ -131,6 +134,7 @@ class SystemApi {
 
     virtual void     implSetCursorPosition(SystemApi::Window *w, int x, int y) = 0;
     virtual void     implShowCursor(SystemApi::Window *w, CursorShape show) = 0;
+    virtual void     implSetCustomCursor(const Pixmap& image, int hotX, int hotY);
 
     virtual float    implUiScale(SystemApi::Window* w);
 

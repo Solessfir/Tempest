@@ -9,8 +9,11 @@
 #include "eventdispatcher.h"
 
 #include <Tempest/Event>
+#include <Tempest/Pixmap>
 #include <Tempest/Window>
 #include <Tempest/Log>
+
+#include <algorithm>
 
 using namespace Tempest;
 
@@ -24,6 +27,10 @@ struct SystemApi::Data {
 SystemApi::Data SystemApi::m;
 
 SystemApi::SystemApi() {
+  }
+
+void SystemApi::implSetCustomCursor(const Pixmap&, int, int) {
+  // not implemented on this platform: CursorShape::Custom shows the arrow
   }
 
 float SystemApi::implUiScale(Window* w) {
@@ -238,6 +245,14 @@ void SystemApi::setCursorPosition(SystemApi::Window *w, int x, int y) {
 
 void SystemApi::showCursor(SystemApi::Window *w, CursorShape show) {
   return inst().implShowCursor(w,show);
+  }
+
+void SystemApi::setCustomCursor(const Pixmap& image, int hotX, int hotY) {
+  if(!image.isEmpty()) {
+    hotX = std::clamp(hotX, 0, int(image.w())-1);
+    hotY = std::clamp(hotY, 0, int(image.h())-1);
+    }
+  return inst().implSetCustomCursor(image,hotX,hotY);
   }
 
 CursorShape SystemApi::cursorShape(Tempest::Window& cb) {
