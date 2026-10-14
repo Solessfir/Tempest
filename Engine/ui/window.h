@@ -37,6 +37,9 @@ class Window : public Widget {
     // app defaults. Has no effect on platforms without orientation support.
     void setAllowedOrientations(Orientation orientations);
 
+    // False while another application has the input focus, or while minimized.
+    bool isActive() const { return active; }
+
   protected:
     virtual void render();
     using        Widget::dispatchPaintEvent;
@@ -53,6 +56,7 @@ class Window : public Widget {
 
     SystemApi::Window* id             = nullptr;
     CursorShape        resolvedCursor = CursorShape::Arrow;
+    bool               active         = true;
 
   friend class Widget;
   friend class UiOverlay;
