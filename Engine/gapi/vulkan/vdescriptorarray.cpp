@@ -95,10 +95,28 @@ void VDescriptorArray::populate(VDevice &dev, AbstractGraphicsApi::Texture **t, 
   descriptorWrite.dstBinding      = 0;
   descriptorWrite.dstArrayElement = 0;
   descriptorWrite.descriptorType  = smp!=nullptr ? VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER : VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
-  descriptorWrite.descriptorCount = uint32_t(cnt);
-  descriptorWrite.pImageInfo      = imageInfo.get();
 
-  vkUpdateDescriptorSets(dev.device.impl, 1, &descriptorWrite, 0, nullptr);
+  // The array is partially bound, so null slots stay unwritten: a null image view needs nullDescriptor, and Mali-G68 crashes on it
+  SmallArray<VkWriteDescriptorSet,16> writes(cnt);
+  uint32_t cntWr = 0;
+  for(size_t i=0; i<cnt;) {
+    if(imageInfo[i].imageView==VK_NULL_HANDLE) {
+      ++i;
+      continue;
+      }
+    size_t end = i;
+    while(end<cnt && imageInfo[end].imageView!=VK_NULL_HANDLE)
+      ++end;
+    auto& wx = writes[cntWr++];
+    wx = descriptorWrite;
+    wx.dstArrayElement = uint32_t(i);
+    wx.descriptorCount = uint32_t(end-i);
+    wx.pImageInfo      = &imageInfo[i];
+    i = end;
+    }
+
+  if(cntWr>0)
+    vkUpdateDescriptorSets(dev.device.impl, cntWr, writes.get(), 0, nullptr);
   }
 
 void VDescriptorArray::populate(VDevice &dev, AbstractGraphicsApi::Buffer **b, size_t cnt) {
