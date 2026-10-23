@@ -527,6 +527,9 @@ void VDevice::deviceProps(VkInstance instance, const bool hasDeviceFeatures2, Vk
     VkPhysicalDeviceDescriptorIndexingProperties indexingProps = {};
     indexingProps.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_PROPERTIES;
 
+    VkPhysicalDeviceRobustness2FeaturesEXT robustness2Features = {};
+    robustness2Features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ROBUSTNESS_2_FEATURES_EXT;
+
     VkPhysicalDeviceRobustness2PropertiesEXT rebustness2Props = {};
     rebustness2Props.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ROBUSTNESS_2_PROPERTIES_EXT;
 
@@ -577,6 +580,9 @@ void VDevice::deviceProps(VkInstance instance, const bool hasDeviceFeatures2, Vk
       properties.pNext = &indexingProps;
       }
     if(props.hasRobustness2) {
+      robustness2Features.pNext = features.pNext;
+      features.pNext = &robustness2Features;
+
       rebustness2Props.pNext = properties.pNext;
       properties.pNext = &rebustness2Props;
       }
@@ -598,6 +604,8 @@ void VDevice::deviceProps(VkInstance instance, const bool hasDeviceFeatures2, Vk
     vkGetPhysicalDeviceFeatures2  (physicalDevice, &features);
     vkGetPhysicalDeviceProperties2(physicalDevice, &properties);
 
+    // Null descriptors are the only part of VK_EXT_robustness2 in use, and the extension doesn't guarantee them
+    props.hasRobustness2          = (robustness2Features.nullDescriptor==VK_TRUE);
     props.hasSync2                = (sync2.synchronization2==VK_TRUE);
     props.hasDynRendering         = (dynRendering.dynamicRendering==VK_TRUE);
     props.hasDeviceAddress        = (bdaFeatures.bufferDeviceAddress==VK_TRUE);
