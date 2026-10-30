@@ -29,6 +29,9 @@ class WindowsApi final : SystemApi {
     int      implExec(AppCallBack& cb) override;
     void     implProcessEvents(AppCallBack& cb) override;
 
+    GamepadState implGamepadState() override;
+    void         implVibrate(uint32_t milliseconds, float strength, bool gamepad) override;
+
     static long long windowProc(void* hWnd, uint32_t msg, const unsigned long long wParam, const long long lParam);
     static void handleKeyEvent(Tempest::Window* cb, uint32_t msg, const unsigned long long wParam, const long long lParam);
 
