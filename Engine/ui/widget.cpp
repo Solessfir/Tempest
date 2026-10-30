@@ -463,7 +463,8 @@ void Widget::setFocus(bool b) {
 
 void Widget::setCursorShape(CursorShape cs) {
   wstate.cursor = cs;
-  if(!wstate.moveOver)
+  // A window's own shape applies until a widget inside it is hovered, also before the first mouse move
+  if(!wstate.moveOver && dynamic_cast<Window*>(this)==nullptr)
     return;
   // Owners of the hovered widget are marked as well; only the hovered widget itself decides the shape
   for(auto i:wx)
