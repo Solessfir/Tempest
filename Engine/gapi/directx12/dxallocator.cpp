@@ -77,7 +77,7 @@ DxAllocator::Provider::DeviceMemory DxAllocator::Provider::alloc(size_t size, ui
   return nullptr;
   }
 
-void DxAllocator::Provider::free(DeviceMemory m, size_t size, uint32_t typeId) {
+void DxAllocator::Provider::free(DeviceMemory m, size_t size, uint32_t typeId, void* /*mapped*/) {
   if(last!=nullptr)
     last->Release();
   last       = m;

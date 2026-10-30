@@ -27,7 +27,7 @@ class DxDescriptorAllocator {
       uint32_t     lastTypeId = 0;
 
       DeviceMemory alloc(size_t size, uint32_t typeId);
-      void         free(DeviceMemory m, size_t size, uint32_t typeId);
+      void         free(DeviceMemory m, size_t size, uint32_t typeId, void* mapped);
       };
 
     struct ProviderHeap {
