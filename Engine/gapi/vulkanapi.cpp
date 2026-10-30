@@ -351,33 +351,32 @@ AbstractGraphicsApi::PTexture VulkanApi::createTexture(AbstractGraphicsApi::Devi
   DSharedPtr<Buffer*>  pstage(new VBuffer (std::move(stage)));
   DSharedPtr<Texture*> ptex  (new VTexture(std::move(tex)));
 
-  auto cmd = dx.dataMgr().get();
-  cmd->begin(SyncHint::NoPendingReads);
-  cmd->hold(pstage);
-  cmd->hold(ptex);
-  cmd->bless(*ptex.handler, ResourceLayout::TransferDst);
-  // cmd->discard(*ptex.handler);
+  // The staging size counts against the batch limit, so pending staging memory stays bounded
+  dx.dataMgr().record(size, [&](auto& cmd) {
+    cmd.hold(pstage);
+    cmd.hold(ptex);
+    cmd.bless(*ptex.handler, ResourceLayout::TransferDst);
+    // cmd.discard(*ptex.handler);
 
-  if(isCompressedFormat(frm)) {
-    size_t blockSize  = Pixmap::blockSizeForFormat(frm);
-    size_t bufferSize = 0;
+    if(isCompressedFormat(frm)) {
+      size_t blockSize  = Pixmap::blockSizeForFormat(frm);
+      size_t bufferSize = 0;
 
-    uint32_t w = uint32_t(p.w()), h = uint32_t(p.h());
-    for(uint32_t i=0; i<mipCnt; i++){
-      cmd->copy(*ptex.handler,w,h,i,*pstage.handler,bufferSize);
+      uint32_t w = uint32_t(p.w()), h = uint32_t(p.h());
+      for(uint32_t i=0; i<mipCnt; i++){
+        cmd.copy(*ptex.handler,w,h,i,*pstage.handler,bufferSize);
 
-      Size bsz   = Pixmap::blockCount(frm,w,h);
-      bufferSize += bsz.w*bsz.h*blockSize;
-      w = std::max<uint32_t>(1,w/2);
-      h = std::max<uint32_t>(1,h/2);
+        Size bsz   = Pixmap::blockCount(frm,w,h);
+        bufferSize += bsz.w*bsz.h*blockSize;
+        w = std::max<uint32_t>(1,w/2);
+        h = std::max<uint32_t>(1,h/2);
+        }
+      } else {
+      cmd.copy(*ptex.handler,p.w(),p.h(),0,*pstage.handler,0);
+      if(mipCnt>1)
+        cmd.generateMipmap(*ptex.handler, p.w(), p.h(), mipCnt);
       }
-    } else {
-    cmd->copy(*ptex.handler,p.w(),p.h(),0,*pstage.handler,0);
-    if(mipCnt>1)
-      cmd->generateMipmap(*ptex.handler, p.w(), p.h(), mipCnt);
-    }
-  cmd->end();
-  dx.dataMgr().submit(std::move(cmd));
+    });
 
   reinterpret_cast<VTexture*>(ptex.handler)->nonUniqId = NonUniqResId::I_None;
 

@@ -88,6 +88,12 @@ class UploadEngine final {
     void                      submit(std::unique_ptr<Commands>&& cmd);
     void                      submitAndWait(std::unique_ptr<Commands>&& cmd);
 
+    // Records into a shared command buffer, submitted in batches instead of once per upload.
+    // The device flushes it before any other submit, so later work sees the data.
+    template<class F>
+    void                      record(size_t bytes, const F& fn);
+    void                      flush();
+
     Buffer                    allocStagingMemory(const void* data, size_t count, size_t size, size_t alignedSz, MemUsage usage, BufferHeap heap);
     Buffer                    allocStagingMemory(const void* data, size_t size, MemUsage usage, BufferHeap heap);
 
@@ -97,6 +103,12 @@ class UploadEngine final {
     Device&                   device;
     SpinLock                  sync;
     std::vector<std::unique_ptr<Commands>> cmd;
+
+    // Bounds the data stored inline in the batch command buffer
+    static constexpr size_t   batchLimit = 8*1024*1024;
+    std::recursive_mutex      batchSync;
+    std::unique_ptr<Commands> batch;
+    size_t                    batchBytes = 0;
   };
 
 template<class Device, class CommandBuffer, class Buffer>
@@ -135,9 +147,36 @@ auto UploadEngine<Device,CommandBuffer,Buffer>::get() -> std::unique_ptr<Command
 
 template<class Device, class CommandBuffer, class Buffer>
 void UploadEngine<Device,CommandBuffer,Buffer>::wait() {
+  flush();
   std::lock_guard<SpinLock> guard(sync);
   for(auto& i:cmd)
     i->wait();
+  }
+
+template<class Device, class CommandBuffer, class Buffer>
+template<class F>
+void UploadEngine<Device,CommandBuffer,Buffer>::record(size_t bytes, const F& fn) {
+  std::lock_guard<std::recursive_mutex> guard(batchSync);
+  if(batch==nullptr) {
+    batch = get();
+    batch->begin();
+    }
+  fn(*batch);
+  batchBytes += bytes;
+  if(batchBytes>=batchLimit)
+    flush();
+  }
+
+template<class Device, class CommandBuffer, class Buffer>
+void UploadEngine<Device,CommandBuffer,Buffer>::flush() {
+  // Held while submitting, so no other submit can overtake the batch
+  std::lock_guard<std::recursive_mutex> guard(batchSync);
+  if(batch==nullptr)
+    return;
+  auto b = std::move(batch);
+  batchBytes = 0;
+  b->end();
+  submit(std::move(b));
   }
 
 template<class Device, class CommandBuffer, class Buffer>
