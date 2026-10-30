@@ -35,7 +35,7 @@ DxDescriptorAllocator::Provider::DeviceMemory DxDescriptorAllocator::Provider::a
   return nullptr;
   }
 
-void DxDescriptorAllocator::Provider::free(DeviceMemory m, size_t size, uint32_t typeId) {
+void DxDescriptorAllocator::Provider::free(DeviceMemory m, size_t size, uint32_t typeId, void* /*mapped*/) {
   if(last!=nullptr)
     last->Release();
   last       = m;

@@ -25,7 +25,7 @@ class DeviceAllocator {
 
     ~DeviceAllocator(){
       for(auto& i:pages)
-        device.free(i.memory,i.size,i.typeId);
+        device.free(i.memory,i.size,i.typeId,i.mapped);
       }
 
     struct Allocation {
@@ -49,7 +49,7 @@ class DeviceAllocator {
       std::lock_guard<std::mutex> guard(sync);
       a.page->free(a);
       if(a.page->allocated==0){
-        device.free(a.page->memory,a.page->size,a.page->typeId);
+        device.free(a.page->memory,a.page->size,a.page->typeId,a.page->mapped);
         pages.remove(*a.page);
         }
       }
@@ -77,7 +77,7 @@ class DeviceAllocator {
         pages.push_front(Page(0));
         }
       catch(...){
-        device.free(pg.memory,pg.size,pg.typeId);
+        device.free(pg.memory,pg.size,pg.typeId,pg.mapped);
         throw;
         }
       pages.front() = std::move(pg);
@@ -109,6 +109,7 @@ struct DeviceAllocator<MemoryProvider>::Page : Block {
 
   Memory     memory = null;
   std::mutex mmapSync;
+  void*      mapped      = nullptr; // whole page, stays mapped until freed
   uint32_t   typeId      = 0;
   uint32_t   heapId      = 0;
   uint32_t   allSize     = 0;
@@ -125,6 +126,7 @@ struct DeviceAllocator<MemoryProvider>::Page : Block {
     size  =p.size;
     offset=p.offset;
     std::swap(memory,p.memory);
+    std::swap(mapped,p.mapped);
     typeId      = p.typeId;
     heapId      = p.heapId;
     allSize     = p.allSize;
@@ -145,6 +147,7 @@ struct DeviceAllocator<MemoryProvider>::Page : Block {
     size  =p.size;
     offset=p.offset;
     std::swap(memory,p.memory);
+    std::swap(mapped,p.mapped);
     typeId      = p.typeId;
     heapId      = p.heapId;
     allSize     = p.allSize;
