@@ -484,7 +484,11 @@ void WindowsApi::implVibrate(uint32_t milliseconds, float strength, bool gamepad
   pad.vibrateUntil = GetTickCount64()+std::max<uint32_t>(milliseconds,1);
   }
 
-void WindowsApi::implShowCursor(SystemApi::Window*, CursorShape show) {
+void WindowsApi::implShowCursor(SystemApi::Window* w, CursorShape show) {
+  // An inactive window shows the system arrow, so a hidden or custom pointer does not linger over it
+  auto cb = reinterpret_cast<Tempest::Window*>(GetWindowLongPtr(HWND(w),GWLP_USERDATA));
+  if(cb!=nullptr && !cb->isActive())
+    return;
   SetCursor(show);
   }
 
@@ -605,7 +609,6 @@ long long WindowsApi::windowProc(void *_hWnd, uint32_t msg, const unsigned long 
         SystemApi::dispatchMouseMove(*cb, e);
         }
 
-      SetCursor(SystemApi::cursorShape(*cb));
       if(wParam==WA_INACTIVE) {
         FocusEvent e(false, Event::UnknownReason);
         SystemApi::dispatchFocus(*cb, e);
@@ -613,6 +616,7 @@ long long WindowsApi::windowProc(void *_hWnd, uint32_t msg, const unsigned long 
         FocusEvent e(true, Event::UnknownReason);
         SystemApi::dispatchFocus(*cb, e);
         }
+      SetCursor(cb->isActive() ? SystemApi::cursorShape(*cb) : CursorShape::Arrow);
       return DefWindowProc( hWnd, msg, wParam, lParam );
       }
 
@@ -713,7 +717,7 @@ long long WindowsApi::windowProc(void *_hWnd, uint32_t msg, const unsigned long 
     case WM_SETCURSOR:
       // The window class has no cursor, so restore ours whenever the pointer comes back from the frame or another window
       if(LOWORD(lParam)==HTCLIENT && !IsIconic(hWnd)) {
-        SetCursor(SystemApi::cursorShape(*cb));
+        SetCursor(cb->isActive() ? SystemApi::cursorShape(*cb) : CursorShape::Arrow);
         return TRUE;
         }
     default:
