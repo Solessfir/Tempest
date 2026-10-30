@@ -8,6 +8,7 @@
 #include <Tempest/TextCodec>
 #include <Tempest/Window>
 
+#include <algorithm>
 #include <atomic>
 #include <unordered_set>
 #include <thread>
@@ -15,12 +16,46 @@
 
 #include <windows.h>
 #include <shellscalingapi.h>
+#include <xinput.h>
 
 using namespace Tempest;
 
 static const wchar_t*                         wndClassName=L"Tempest.Window";
 static std::unordered_set<SystemApi::Window*> windows;
 static std::atomic_bool                       isExit{0};
+
+// XInput is loaded at runtime, so the game still starts where no XInput DLL is installed
+struct XInputPad {
+  using GetStateFn = DWORD (WINAPI*)(DWORD, XINPUT_STATE*);
+  using SetStateFn = DWORD (WINAPI*)(DWORD, XINPUT_VIBRATION*);
+  GetStateFn   getState      = nullptr;
+  SetStateFn   setState      = nullptr;
+  DWORD        user          = 0;
+  bool         connected     = false;
+  // Querying an empty slot stalls for milliseconds, so a missing pad is looked for once a second
+  ULONGLONG    nextProbe     = 0;
+  ULONGLONG    vibrateUntil  = 0;
+  GamepadState state;
+  };
+
+static XInputPad& xinputPad() {
+  static XInputPad pad = []() {
+    XInputPad ret;
+    HMODULE dll = LoadLibraryW(L"xinput1_4.dll");
+    if(dll==nullptr)
+      dll = LoadLibraryW(L"xinput9_1_0.dll");
+    if(dll!=nullptr) {
+      ret.getState = reinterpret_cast<XInputPad::GetStateFn>(reinterpret_cast<void*>(GetProcAddress(dll,"XInputGetState")));
+      ret.setState = reinterpret_cast<XInputPad::SetStateFn>(reinterpret_cast<void*>(GetProcAddress(dll,"XInputSetState")));
+      }
+    return ret;
+    }();
+  return pad;
+  }
+
+static float xinputStick(SHORT v) {
+  return std::max(-1.f, float(v)/32767.f);
+  }
 
 static int getIntParam(DWORD_PTR v){
   if(v>std::numeric_limits<int16_t>::max())
@@ -369,6 +404,84 @@ static void SetCursor(CursorShape show) {
     }
   HCURSOR hcur = idc==nullptr ? nullptr : LoadCursorA(nullptr, idc);
   SetCursor(hcur);
+  }
+
+GamepadState WindowsApi::implGamepadState() {
+  auto& pad = xinputPad();
+  if(pad.getState==nullptr)
+    return GamepadState();
+
+  const ULONGLONG now = GetTickCount64();
+  XINPUT_STATE    xs  = {};
+  if(pad.connected && pad.getState(pad.user,&xs)!=ERROR_SUCCESS)
+    pad.connected = false;
+  if(!pad.connected && now>=pad.nextProbe) {
+    pad.nextProbe = now+1000;
+    for(DWORD i=0; i<XUSER_MAX_COUNT && !pad.connected; ++i) {
+      if(pad.getState(i,&xs)==ERROR_SUCCESS) {
+        pad.user      = i;
+        pad.connected = true;
+        }
+      }
+    }
+
+  if(pad.vibrateUntil!=0 && (now>=pad.vibrateUntil || !pad.connected)) {
+    XINPUT_VIBRATION off = {};
+    if(pad.connected && pad.setState!=nullptr)
+      pad.setState(pad.user,&off);
+    pad.vibrateUntil = 0;
+    }
+
+  GamepadState::Sample s;
+  if(pad.connected) {
+    const auto& g = xs.Gamepad;
+    static const std::pair<WORD,uint32_t> map[] = {
+      {XINPUT_GAMEPAD_A,GamepadState::A}, {XINPUT_GAMEPAD_B,GamepadState::B},
+      {XINPUT_GAMEPAD_X,GamepadState::X}, {XINPUT_GAMEPAD_Y,GamepadState::Y},
+      {XINPUT_GAMEPAD_LEFT_SHOULDER,GamepadState::L1}, {XINPUT_GAMEPAD_RIGHT_SHOULDER,GamepadState::R1},
+      {XINPUT_GAMEPAD_LEFT_THUMB,GamepadState::L3},    {XINPUT_GAMEPAD_RIGHT_THUMB,GamepadState::R3},
+      {XINPUT_GAMEPAD_START,GamepadState::Start},      {XINPUT_GAMEPAD_BACK,GamepadState::Select},
+      {XINPUT_GAMEPAD_DPAD_UP,GamepadState::Up},       {XINPUT_GAMEPAD_DPAD_DOWN,GamepadState::Down},
+      {XINPUT_GAMEPAD_DPAD_LEFT,GamepadState::Left},   {XINPUT_GAMEPAD_DPAD_RIGHT,GamepadState::Right},
+      };
+    for(auto& [x,b]:map)
+      if(g.wButtons & x)
+        s.buttons |= b;
+    // XInput points the Y axes up, the shared convention points them down
+    s.leftStickX   =  xinputStick(g.sThumbLX);
+    s.leftStickY   = -xinputStick(g.sThumbLY);
+    s.rightStickX  =  xinputStick(g.sThumbRX);
+    s.rightStickY  = -xinputStick(g.sThumbRY);
+    s.leftTrigger  = float(g.bLeftTrigger) /255.f;
+    s.rightTrigger = float(g.bRightTrigger)/255.f;
+    }
+
+  auto& st = pad.state;
+  st.changes.clear();
+  if(s.buttons!=st.buttons || s.leftStickX!=st.leftStickX || s.leftStickY!=st.leftStickY ||
+     s.rightStickX!=st.rightStickX || s.rightStickY!=st.rightStickY ||
+     s.leftTrigger!=st.leftTrigger || s.rightTrigger!=st.rightTrigger)
+    st.changes.push_back(s);
+  st.buttons      = s.buttons;
+  st.leftStickX   = s.leftStickX;
+  st.leftStickY   = s.leftStickY;
+  st.rightStickX  = s.rightStickX;
+  st.rightStickY  = s.rightStickY;
+  st.leftTrigger  = s.leftTrigger;
+  st.rightTrigger = s.rightTrigger;
+  st.connected    = pad.connected;
+  return st;
+  }
+
+void WindowsApi::implVibrate(uint32_t milliseconds, float strength, bool gamepad) {
+  auto& pad = xinputPad();
+  if(!gamepad || !pad.connected || pad.setState==nullptr)
+    return;
+  const WORD speed = WORD(std::clamp(strength,0.f,1.f)*65535.f);
+  XINPUT_VIBRATION v = {speed,speed};
+  pad.setState(pad.user,&v);
+  // Stopped by the next poll after the duration
+  pad.vibrateUntil = GetTickCount64()+std::max<uint32_t>(milliseconds,1);
   }
 
 void WindowsApi::implShowCursor(SystemApi::Window*, CursorShape show) {
