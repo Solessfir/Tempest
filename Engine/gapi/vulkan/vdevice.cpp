@@ -1117,6 +1117,8 @@ VkResult VDevice::waitFence(VFence& t, uint64_t timeout) {
   }
 
 void VDevice::waitIdle() {
+  if(data!=nullptr)
+    data->flush();
   waitIdleSync(queues,sizeof(queues)/sizeof(queues[0]));
   }
 
@@ -1134,6 +1136,9 @@ void VDevice::waitIdleSync(VDevice::Queue* q, size_t n) {
   }
 
 std::shared_ptr<VFence> VDevice::submit(VCommandBuffer& cmd) {
+  // Pending uploads must reach the queue first
+  if(data!=nullptr)
+    data->flush();
   // flush descriptor memory
   descAlloc.flush();
 

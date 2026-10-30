@@ -41,14 +41,10 @@ void VBuffer::update(const void* data, size_t off, size_t size) {
 
   if(off%4==0 && size%4==0) {
     Detail::DSharedPtr<Buffer*> pBuf(this);
-
-    auto cmd = dx.dataMgr().get();
-    cmd->begin();
-    cmd->hold(pBuf); // NOTE: VBuffer may be deleted, before copy is finished
-    cmd->copy(*this, off, data, size);
-    cmd->end();
-
-    dx.dataMgr().submit(std::move(cmd));
+    dx.dataMgr().record(size, [&](auto& cmd) {
+      cmd.hold(pBuf); // NOTE: VBuffer may be deleted, before copy is finished
+      cmd.copy(*this, off, data, size);
+      });
     return;
     }
 
@@ -58,14 +54,12 @@ void VBuffer::update(const void* data, size_t off, size_t size) {
   Detail::DSharedPtr<Buffer*> pStage(new Detail::VBuffer(std::move(stage)));
   Detail::DSharedPtr<Buffer*> pBuf  (this);
 
-  auto cmd = dx.dataMgr().get();
-  cmd->begin();
-  cmd->hold(pBuf); // NOTE: VBuffer may be deleted, before copy is finished
-  cmd->hold(pStage);
-  cmd->copy(*this, off, *pStage.handler, 0, size);
-  cmd->end();
-
-  dx.dataMgr().submit(std::move(cmd));
+  // The data is in the staging buffer already, so it does not count against the batch limit
+  dx.dataMgr().record(0, [&](auto& cmd) {
+    cmd.hold(pBuf); // NOTE: VBuffer may be deleted, before copy is finished
+    cmd.hold(pStage);
+    cmd.copy(*this, off, *pStage.handler, 0, size);
+    });
   }
 
 void VBuffer::read(void* out, size_t off, size_t size) {
@@ -98,14 +92,10 @@ void VBuffer::fill(uint32_t data, size_t off, size_t size) {
 
   if(off%4==0 && size%4==0) {
     Detail::DSharedPtr<Buffer*> pBuf(this);
-
-    auto cmd = dx.dataMgr().get();
-    cmd->begin(SyncHint::NoPendingReads);
-    cmd->hold(pBuf); // NOTE: VBuffer may be deleted, before fill is finished
-    cmd->fill(*this, off, data, size);
-    cmd->end();
-
-    dx.dataMgr().submit(std::move(cmd));
+    dx.dataMgr().record(0, [&](auto& cmd) {
+      cmd.hold(pBuf); // NOTE: VBuffer may be deleted, before fill is finished
+      cmd.fill(*this, off, data, size);
+      });
     return;
     }
   assert(false);
