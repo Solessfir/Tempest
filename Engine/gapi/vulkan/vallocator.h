@@ -24,7 +24,7 @@ class VAllocator {
       size_t       lastSize=0;
 
       DeviceMemory alloc(size_t size, uint32_t typeId);
-      void         free(DeviceMemory m, size_t size, uint32_t typeId);
+      void         free(DeviceMemory m, size_t size, uint32_t typeId, void* mapped);
       };
 
     struct MemRequirements {
@@ -66,10 +66,11 @@ class VAllocator {
     void getMemoryRequirements   (MemRequirements& out, VkBuffer buf);
     void getImgMemoryRequirements(MemRequirements& out, VkImage  img);
     void alignRange(VkMappedMemoryRange& rgn, size_t nonCoherentAtomSize, size_t &shift);
+    uint8_t* map(const Allocation& a);
 
     Allocation allocMemory(const MemRequirements& rq, const uint32_t heapId, const uint32_t typeId, bool hostVisible);
 
-    bool commit(VkDeviceMemory dev, std::mutex& mmapSync, VkBuffer dest, size_t offset, const void *mem, size_t size);
+    bool commit(const Allocation& page, VkBuffer dest, const void *mem, size_t size);
     bool commit(VkDeviceMemory dev, std::mutex& mmapSync, VkImage  dest, size_t offset);
   };
 

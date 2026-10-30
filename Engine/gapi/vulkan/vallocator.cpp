@@ -73,9 +73,12 @@ VAllocator::Provider::DeviceMemory VAllocator::Provider::alloc(size_t size, uint
   return memory;
   }
 
-void VAllocator::Provider::free(VAllocator::Provider::DeviceMemory m, size_t size, uint32_t typeId) {
+void VAllocator::Provider::free(VAllocator::Provider::DeviceMemory m, size_t size, uint32_t typeId, void* mapped) {
   if(lastFree!=VK_NULL_HANDLE)
     vkFreeMemory(device->device.impl,lastFree,nullptr);
+  // reused memory gets mapped again by its new page
+  if(mapped!=nullptr)
+    vkUnmapMemory(device->device.impl,m);
 
   lastFree = m;
   lastSize = size;
@@ -206,7 +209,7 @@ VBuffer VAllocator::alloc(const void *mem, size_t size, MemUsage usage, BufferHe
     if(!ret.page.page)
       continue;
 
-    if(!commit(ret.page.page->memory,ret.page.page->mmapSync,ret.impl,ret.page.offset,mem,size)) {
+    if(!commit(ret.page,ret.impl,mem,size)) {
       throw std::system_error(Tempest::GraphicsErrc::OutOfHostMemory);
       }
     return ret;
@@ -441,15 +444,13 @@ bool VAllocator::fill(VBuffer& dest, uint32_t mem, size_t offset, size_t size) {
   size_t shift = 0;
   alignRange(rgn,provider.device->props.nonCoherentAtomSize,shift);
 
-  std::lock_guard<std::mutex> g(page.page->mmapSync);
-  if(vkMapMemory(dev,page.page->memory,rgn.offset,rgn.size,0,&data)!=VK_SUCCESS)
+  if((data = map(page))==nullptr)
     return false;
 
-  data = reinterpret_cast<uint8_t*>(data) + shift;
+  data = reinterpret_cast<uint8_t*>(data) + offset;
   std::fill_n(reinterpret_cast<uint32_t*>(data), size/sizeof(uint32_t), mem);
 
   vkFlushMappedMemoryRanges(dev,1,&rgn);
-  vkUnmapMemory(dev,page.page->memory);
   return true;
   }
 
@@ -466,15 +467,13 @@ bool VAllocator::update(VBuffer &dest, const void *mem, size_t offset, size_t si
   size_t shift = 0;
   alignRange(rgn,provider.device->props.nonCoherentAtomSize,shift);
 
-  std::lock_guard<std::mutex> g(page.page->mmapSync);
-  if(vkMapMemory(dev,page.page->memory,rgn.offset,rgn.size,0,&data)!=VK_SUCCESS)
+  if((data = map(page))==nullptr)
     return false;
 
-  data = reinterpret_cast<uint8_t*>(data) + shift;
+  data = reinterpret_cast<uint8_t*>(data) + offset;
   std::memcpy(data, mem, size);
 
   vkFlushMappedMemoryRanges(dev,1,&rgn);
-  vkUnmapMemory(dev,page.page->memory);
   return true;
   }
 
@@ -490,40 +489,21 @@ bool VAllocator::read(VBuffer &src, void *mem, size_t offset, size_t size) {
   size_t shift = 0;
   alignRange(rgn,provider.device->props.nonCoherentAtomSize,shift);
 
-  std::lock_guard<std::mutex> g(page.page->mmapSync);
-  if(vkMapMemory(dev,page.page->memory,rgn.offset,rgn.size,0,&data)!=VK_SUCCESS)
+  if((data = map(page))==nullptr)
     return false;
   vkInvalidateMappedMemoryRanges(dev,1,&rgn);
 
-  data = reinterpret_cast<uint8_t*>(data)+shift;
+  data = reinterpret_cast<uint8_t*>(data)+offset;
   std::memcpy(mem,data,size);
-
-  vkUnmapMemory(dev,page.page->memory);
   return true;
   }
 
 uint8_t* VAllocator::mapDescriptorHeap(VBuffer& src) {
-  auto& page = src.page;
-  void* data = nullptr;
-
-  VkMappedMemoryRange rgn={};
-  rgn.sType  = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE;
-  rgn.memory = page.page->memory;
-  rgn.offset = page.offset;
-  rgn.size   = page.size;
-  size_t shift = 0;
-  alignRange(rgn,provider.device->props.nonCoherentAtomSize,shift);
-
-  std::lock_guard<std::mutex> g(page.page->mmapSync);
-  if(vkMapMemory(dev,page.page->memory,rgn.offset,rgn.size,0,&data)!=VK_SUCCESS)
-    return nullptr;
-  return reinterpret_cast<uint8_t*>(data);
+  return map(src.page);
   }
 
-void VAllocator::unmapDescriptorHeap(VBuffer& src) {
-  if(src.page.page==nullptr)
-    return;
-  vkUnmapMemory(dev, src.page.page->memory);
+void VAllocator::unmapDescriptorHeap(VBuffer&) {
+  // pages stay mapped until freed
   }
 
 void VAllocator::flushDescriptorHeap(VBuffer& src) {
@@ -543,29 +523,38 @@ void VAllocator::flushDescriptorHeap(VBuffer& src) {
   vkFlushMappedMemoryRanges(dev,1,&rgn);
   }
 
-bool VAllocator::commit(VkDeviceMemory dmem, std::mutex &mmapSync, VkBuffer dest, size_t pageOffset, const void* mem, size_t size) {
+bool VAllocator::commit(const Allocation& page, VkBuffer dest, const void* mem, size_t size) {
   VkMappedMemoryRange rgn={};
   rgn.sType  = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE;
-  rgn.memory = dmem;
-  rgn.offset = pageOffset;
+  rgn.memory = page.page->memory;
+  rgn.offset = page.offset;
   rgn.size   = size;
   size_t shift = 0;
   alignRange(rgn,provider.device->props.nonCoherentAtomSize,shift);
 
-  std::lock_guard<std::mutex> g(mmapSync); // on practice bind requires external sync
-  if(vkBindBufferMemory(dev,dest,dmem,pageOffset)!=VK_SUCCESS)
+  {
+  std::lock_guard<std::mutex> g(page.page->mmapSync); // on practice bind requires external sync
+  if(vkBindBufferMemory(dev,dest,page.page->memory,page.offset)!=VK_SUCCESS)
     return false;
+  }
   if(mem!=nullptr) {
-    void* data=nullptr;
-    if(vkMapMemory(dev,dmem,pageOffset,rgn.size,0,&data)!=VK_SUCCESS)
+    uint8_t* data = map(page);
+    if(data==nullptr)
       return false;
-    data = reinterpret_cast<uint8_t*>(data)+shift;
     std::memcpy(data, mem, size);
     vkFlushMappedMemoryRanges(dev,1,&rgn);
-    vkUnmapMemory(dev,dmem);
     }
 
   return true;
+  }
+
+uint8_t* VAllocator::map(const Allocation& a) {
+  // vkMapMemory and vkUnmapMemory are syscalls on some drivers, so each page is mapped once
+  auto& page = *a.page;
+  std::lock_guard<std::mutex> g(page.mmapSync);
+  if(page.mapped==nullptr && vkMapMemory(dev,page.memory,0,VK_WHOLE_SIZE,0,&page.mapped)!=VK_SUCCESS)
+    return nullptr;
+  return reinterpret_cast<uint8_t*>(page.mapped) + a.offset;
   }
 
 bool VAllocator::commit(VkDeviceMemory dmem, std::mutex& mmapSync, VkImage dest, size_t offset) {
