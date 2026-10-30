@@ -72,7 +72,8 @@ WFile::WFile(WFile &&other)
 
 #ifdef __WINDOWS__
 void* WFile::implOpen(const wchar_t *wstr) {
-  void* ret = CreateFileW(wstr,GENERIC_WRITE,0,nullptr,CREATE_ALWAYS,FILE_ATTRIBUTE_NORMAL,nullptr);
+  // Readers may watch a file while it is written, such as a log
+  void* ret = CreateFileW(wstr,GENERIC_WRITE,FILE_SHARE_READ,nullptr,CREATE_ALWAYS,FILE_ATTRIBUTE_NORMAL,nullptr);
   if(ret==HANDLE(LONG_PTR(-1)))
     throw std::system_error(Tempest::SystemErrc::UnableToOpenFile);
   return ret;
