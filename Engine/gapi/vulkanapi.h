@@ -5,6 +5,7 @@
 #include <memory>
 #include <cstdint>
 #include <vector>
+#include <string>
 
 namespace Tempest {
 
@@ -14,6 +15,9 @@ class VulkanApi : public AbstractGraphicsApi {
     virtual ~VulkanApi();
 
     std::vector<Props> devices() const override;
+
+    // Extensions a native library needs, requested before the api is created; unsupported ones are skipped
+    static void requestExtensions(std::vector<std::string> instance, std::vector<std::string> device);
 
   protected:
     Device*        createDevice(std::string_view gpuName) override;
