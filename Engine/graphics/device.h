@@ -57,6 +57,8 @@ class Device {
     Shader                shader(const void* source, const size_t length);
 
     const Props&          properties() const;
+    // backend handles for native libraries, see AbstractGraphicsApi::NativeDevice
+    AbstractGraphicsApi::NativeDevice native() const { return dev->native(); }
 
     template<class T>
     VertexBuffer<T>       vbo(const T* arr, size_t arrSize) {

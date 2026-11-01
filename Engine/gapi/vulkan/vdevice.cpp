@@ -49,6 +49,8 @@ const std::initializer_list<const char*> VDevice::requiredExtensions = {
   VK_KHR_SWAPCHAIN_EXTENSION_NAME
   };
 
+std::vector<std::string> VDevice::optionalExtensions;
+
 VDevice::autoDevice::~autoDevice() {
   vkDestroyDevice(impl,nullptr);
   }
@@ -196,6 +198,15 @@ void VDevice::createLogicalDevice(VkPhysicalDevice pdev) {
   if(props.hasDescriptorHeap) {
     rqExt.push_back(VK_EXT_DESCRIPTOR_HEAP_EXTENSION_NAME);
     }
+  {
+    const auto ext = extensionsList(pdev);
+    for(auto& i:optionalExtensions) {
+      if(!extensionSupport(ext, i.c_str()))
+        continue;
+      if(std::find_if(rqExt.begin(), rqExt.end(), [&](const char* e){ return i==e; })==rqExt.end())
+        rqExt.push_back(i.c_str());
+      }
+  }
 
   VkPhysicalDeviceFeatures supportedFeatures={};
   vkGetPhysicalDeviceFeatures(pdev,&supportedFeatures);
@@ -1120,6 +1131,16 @@ void VDevice::waitIdle() {
   if(data!=nullptr)
     data->flush();
   waitIdleSync(queues,sizeof(queues)/sizeof(queues[0]));
+  }
+
+AbstractGraphicsApi::NativeDevice VDevice::native() {
+  AbstractGraphicsApi::NativeDevice ret;
+  ret.instance            = instance;
+  ret.physicalDevice      = physicalDevice;
+  ret.device              = device.impl;
+  ret.getInstanceProcAddr = reinterpret_cast<void*>(&vkGetInstanceProcAddr);
+  ret.getDeviceProcAddr   = reinterpret_cast<void*>(&vkGetDeviceProcAddr);
+  return ret;
   }
 
 void VDevice::waitIdleSync(VDevice::Queue* q, size_t n) {

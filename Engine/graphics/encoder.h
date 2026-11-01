@@ -119,6 +119,13 @@ class Encoder<Tempest::CommandBuffer> {
 
     void generateMipmaps(Attachment& tex);
 
+    // Escape hatch for native libraries: the backend command buffer with all pending barriers recorded.
+    // Images must have been used by a dispatch in the state the native code expects. Call nativeEnd() after.
+    void* nativeBegin();
+    void  nativeEnd();
+    AbstractGraphicsApi::NativeImage native(const Attachment&   img) const;
+    AbstractGraphicsApi::NativeImage native(const StorageImage& img) const;
+
   private:
     explicit Encoder(CommandBuffer* ow);
 
