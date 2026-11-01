@@ -106,6 +106,8 @@ static const char* surfaceExtensionName() {
   }
 
 
+static std::vector<std::string> optionalInstanceExtensions;
+
 struct Tempest::VulkanApi::Impl {
   Impl(bool validation)
     :validation(validation) {
@@ -147,6 +149,12 @@ struct Tempest::VulkanApi::Impl {
     if(extensionSupport(ext, VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME)) {
       rqExt.push_back(VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME);
       hasDeviceFeatures2 = true;
+      }
+    for(auto& i:optionalInstanceExtensions) {
+      if(!extensionSupport(ext, i.c_str()))
+        continue;
+      if(std::find_if(rqExt.begin(), rqExt.end(), [&](const char* e){ return i==e; })==rqExt.end())
+        rqExt.push_back(i.c_str());
       }
 
     createInfo.enabledExtensionCount   = uint32_t(rqExt.size());
@@ -549,6 +557,11 @@ VkBool32 VulkanApi::Impl::debugReportCallback(VkDebugReportFlagsEXT      flags,
 
   Log::e("VulkanApi: ", pMessage," object=",object,", type=",objectType," th:",std::this_thread::get_id());
   return VK_FALSE;
+  }
+
+void VulkanApi::requestExtensions(std::vector<std::string> instance, std::vector<std::string> device) {
+  optionalInstanceExtensions = std::move(instance);
+  VDevice::optionalExtensions = std::move(device);
   }
 
 #endif

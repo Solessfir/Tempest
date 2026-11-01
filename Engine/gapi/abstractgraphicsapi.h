@@ -509,9 +509,25 @@ namespace Tempest {
         mutable std::atomic_uint_fast32_t counter{0};
         };
 
+      // Backend handles for native libraries (VkInstance, VkPhysicalDevice, VkDevice and the loader on Vulkan)
+      struct NativeDevice {
+        void* instance            = nullptr;
+        void* physicalDevice      = nullptr;
+        void* device              = nullptr;
+        void* getInstanceProcAddr = nullptr;
+        void* getDeviceProcAddr   = nullptr;
+        };
+      // VkImage, VkImageView and VkFormat on Vulkan
+      struct NativeImage {
+        void*    image  = nullptr;
+        void*    view   = nullptr;
+        uint32_t format = 0;
+        };
+
       struct Device:NoCopy {
         virtual ~Device()=default;
-        virtual void        waitIdle() = 0;
+        virtual void         waitIdle() = 0;
+        virtual NativeDevice native() { return NativeDevice(); }
         };
       struct Fence:NoCopy {
         virtual ~Fence()=default;
@@ -536,6 +552,7 @@ namespace Tempest {
       struct Texture:Shared  {
         virtual uint32_t      mipCount() const = 0;
         virtual NonUniqResId  syncId() const = 0;
+        virtual NativeImage   native() { return NativeImage(); }
         };
       struct Pipeline:Shared {
         virtual IVec3  workGroupSize() const = 0;
@@ -598,6 +615,9 @@ namespace Tempest {
         virtual void copy(Buffer& dest, size_t offset, Texture& src, uint32_t width, uint32_t height, uint32_t mip) = 0;
 
         virtual bool isRecording() const = 0;
+        // Native command buffer with all pending barriers recorded; nativeEnd() before recording continues
+        virtual void* nativeBegin() { return nullptr; }
+        virtual void  nativeEnd() {}
         virtual void begin(Detail::SyncHint hint);
         virtual void begin()=0;
         virtual void end()  =0;

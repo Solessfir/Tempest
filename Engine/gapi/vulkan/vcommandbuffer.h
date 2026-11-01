@@ -43,6 +43,8 @@ class VCommandBuffer:public AbstractGraphicsApi::CommandBuffer {
     void begin() override;
     void end() override;
     bool isRecording() const override;
+    void* nativeBegin() override;
+    void  nativeEnd() override;
 
     void beginRendering(const Detail::FrameBufferDesc& fbo, size_t fboSize, uint32_t w, uint32_t h) override;
     void endRendering() override;

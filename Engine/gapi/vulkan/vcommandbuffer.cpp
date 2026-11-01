@@ -1248,6 +1248,19 @@ void VCommandBuffer::vkCmdEndRenderingKHR(VkCommandBuffer impl) {
     }
   }
 
+void* VCommandBuffer::nativeBegin() {
+  resState.flush(*this);
+  if(impl==nullptr)
+    newChunk();
+  return impl;
+  }
+
+void VCommandBuffer::nativeEnd() {
+  // the native code may have changed any state; a new chunk starts with everything rebound
+  newChunk();
+  pipelineLayout = VK_NULL_HANDLE;
+  }
+
 void VCommandBuffer::pushChunk() {
   if(impl!=nullptr) {
     Chunk ch;

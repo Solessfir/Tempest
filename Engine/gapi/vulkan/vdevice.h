@@ -389,6 +389,7 @@ class VDevice : public AbstractGraphicsApi::Device {
       };
 
     void                    waitIdle() override;
+    AbstractGraphicsApi::NativeDevice native() override;
     std::shared_ptr<VFence> submit(VCommandBuffer& cmd);
 
     static std::vector<VkExtensionProperties> extensionsList(VkPhysicalDevice dev);
@@ -470,6 +471,7 @@ class VDevice : public AbstractGraphicsApi::Device {
     PFN_vkCmdBindSamplerHeapEXT       vkCmdBindSamplerHeapEXT = nullptr;
 
     static const std::initializer_list<const char*> requiredExtensions;
+    static std::vector<std::string>                 optionalExtensions; // VulkanApi::requestExtensions
 
   private:
     VkPhysicalDeviceMemoryProperties memoryProperties;

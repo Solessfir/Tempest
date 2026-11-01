@@ -184,5 +184,13 @@ VTextureWithFbo::~VTextureWithFbo() {
     dev->fboMap.notifyDestroy(imgView);
   }
 
+AbstractGraphicsApi::NativeImage VTexture::native() {
+  AbstractGraphicsApi::NativeImage ret;
+  ret.image  = reinterpret_cast<void*>(impl);
+  ret.view   = reinterpret_cast<void*>(imgView);
+  ret.format = uint32_t(format);
+  return ret;
+  }
+
 #endif
 
