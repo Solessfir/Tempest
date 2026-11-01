@@ -3,6 +3,7 @@
 #include <Tempest/AbstractGraphicsApi>
 #include <Tempest/RenderState>
 #include <Tempest/AccelerationStructure>
+#include <Tempest/Log>
 #include <stdexcept>
 #include <string>
 
@@ -32,6 +33,9 @@ class VTexture;
 inline void vkAssert(VkResult code){
   if(T_LIKELY(code==VK_SUCCESS))
     return;
+
+  if(code!=VK_SUBOPTIMAL_KHR)
+    Log::e("Vulkan: VkResult=", int(code)); // the exceptions below lose which error it was
 
   switch( code ) {
     case VK_SUBOPTIMAL_KHR:

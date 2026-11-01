@@ -4,6 +4,8 @@
 #include <algorithm>
 #include <mutex>
 
+#include <Tempest/Log>
+
 #include "../utility/spinlock.h"
 
 namespace Tempest {
@@ -72,6 +74,7 @@ class DescriptorAllocator {
         }
 
       // bad free
+      Log::e("DescriptorAllocator: bad free");
       throw std::bad_alloc();
       }
 
@@ -107,8 +110,10 @@ class DescriptorAllocator {
       // realloc heap
       auto prevSize = provider.size();
       auto size     = std::max(prevSize, provider.reserveSize) + allocSize;
-      if(size > provider.maxSize)
+      if(size > provider.maxSize) {
+        Log::e("DescriptorAllocator: out of descriptors, ", size, " > ", provider.maxSize);
         throw std::bad_alloc();
+        }
 #if 1
       size = std::min(std::max(nextPot(size), 4*1024u), provider.maxSize);
 #else
