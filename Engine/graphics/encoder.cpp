@@ -317,3 +317,23 @@ void Encoder<CommandBuffer>::generateMipmaps(Attachment& img) {
   uint32_t w   = tex.w(), h = tex.h();
   impl->generateMipmap(*tex.impl.handler,w,h,tex.mipCount());
   }
+
+void* Encoder<Tempest::CommandBuffer>::nativeBegin() {
+  if(state.stage==Rendering)
+    throw std::system_error(Tempest::GraphicsErrc::ComputeCallInRenderPass);
+  return impl->nativeBegin();
+  }
+
+void Encoder<Tempest::CommandBuffer>::nativeEnd() {
+  impl->nativeEnd();
+  state.curPipeline = nullptr;
+  state.curCompute  = nullptr;
+  }
+
+AbstractGraphicsApi::NativeImage Encoder<Tempest::CommandBuffer>::native(const Attachment& img) const {
+  return img.tImpl.impl.handler->native();
+  }
+
+AbstractGraphicsApi::NativeImage Encoder<Tempest::CommandBuffer>::native(const StorageImage& img) const {
+  return img.tImpl.impl.handler->native();
+  }
