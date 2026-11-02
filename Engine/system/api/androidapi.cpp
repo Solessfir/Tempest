@@ -751,6 +751,12 @@ extern "C" void android_main(android_app* state) {
 
   if(app->destroyRequested==0)
     ANativeActivity_finish(app->activity);
+  // Finishing is asynchronous: exiting at once kills the process before the activity's close transition runs.
+  // The application's windows are gone, so the remaining events go only to the glue, which sets destroyRequested.
+  app->onAppCmd     = nullptr;
+  app->onInputEvent = nullptr;
+  while(app->destroyRequested==0)
+    pollAndroid(app,-1);
   // Re-entering main would reuse application statics from the previous run.
   // The application has unwound; process-wide destructors can race Android runtime threads.
   std::_Exit(result);
