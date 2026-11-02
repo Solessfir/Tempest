@@ -3,6 +3,7 @@ package org.tempest;
 import android.app.NativeActivity;
 import android.content.pm.ActivityInfo;
 import android.content.pm.PackageManager;
+import android.content.res.TypedArray;
 import android.graphics.Color;
 import android.hardware.input.InputManager;
 import android.hardware.display.DisplayManager;
@@ -200,10 +201,38 @@ public class TempestNativeActivity extends NativeActivity implements InputManage
     private native void nativeGamepad(boolean connected, int buttons, float lx, float ly,
                                       float rx, float ry, float lt, float rt);
 
+    private int closeEnterAnimation = 0;
+    private int closeExitAnimation  = 0;
+
+    // Android 14 transitions ignore the theme's windowAnimationStyle for a closing activity,
+    // so the close animation the application declares there is applied explicitly
+    private void applyCloseAnimation() {
+        TypedArray theme = getTheme().obtainStyledAttributes(new int[] {android.R.attr.windowAnimationStyle});
+        int style = theme.getResourceId(0, 0);
+        theme.recycle();
+        if (style == 0)
+            return;
+        TypedArray anim = obtainStyledAttributes(style, new int[] {android.R.attr.activityCloseEnterAnimation,
+                                                                   android.R.attr.activityCloseExitAnimation});
+        closeEnterAnimation = anim.getResourceId(0, 0);
+        closeExitAnimation  = anim.getResourceId(1, 0);
+        anim.recycle();
+        if (Build.VERSION.SDK_INT >= 34 && (closeEnterAnimation != 0 || closeExitAnimation != 0))
+            overrideActivityTransition(OVERRIDE_TRANSITION_CLOSE, closeEnterAnimation, closeExitAnimation);
+    }
+
+    @Override
+    public void finish() {
+        super.finish();
+        if (Build.VERSION.SDK_INT < 34 && (closeEnterAnimation != 0 || closeExitAnimation != 0))
+            overridePendingTransition(closeEnterAnimation, closeExitAnimation);
+    }
+
     @Override
     protected void onCreate(Bundle state) {
         loadNativeLibrary();
         super.onCreate(state);
+        applyCloseAnimation();
         setVolumeControlStream(AudioManager.STREAM_MUSIC);
         View content = findViewById(android.R.id.content);
         content.setOnApplyWindowInsetsListener((view, insets) -> {
