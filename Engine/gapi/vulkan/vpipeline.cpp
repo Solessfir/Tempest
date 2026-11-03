@@ -326,8 +326,14 @@ VkPipeline VPipeline::initGraphicsPipeline(VDevice& device,
   if(device.serializePipelineCreation)
     pipelineGuard.lock();
   const auto err = vkCreateGraphicsPipelines(device.device.impl,VK_NULL_HANDLE,1,&pipelineInfo,nullptr,&graphicsPipeline);
-  if(err!=VK_SUCCESS)
-    throw std::system_error(Tempest::GraphicsErrc::InvalidShaderModule);
+  if(err!=VK_SUCCESS) {
+    // Drivers reject some pipelines without a validation error; the shader names tell which one
+    std::string names;
+    for(size_t i=0; i<5; ++i)
+      if(shaders[i].handler!=nullptr)
+        names += std::string(names.empty() ? "" : ", ") + shaders[i].handler->dbgShortName();
+    throw std::system_error(Tempest::GraphicsErrc::InvalidShaderModule, names + " (VkResult " + std::to_string(int(err)) + ")");
+    }
   return graphicsPipeline;
   }
 
@@ -427,7 +433,7 @@ VCompPipeline::VCompPipeline(VDevice& device, const VShader& comp)
       pipelineGuard.lock();
     const auto err = vkCreateComputePipelines(dev, VK_NULL_HANDLE, 1, &info, nullptr, &impl);
     if(err!=VK_SUCCESS)
-      throw std::system_error(Tempest::GraphicsErrc::InvalidShaderModule);
+      throw std::system_error(Tempest::GraphicsErrc::InvalidShaderModule, std::string(comp.dbgShortName()) + " (VkResult " + std::to_string(int(err)) + ")");
 
     VkDebugMarkerObjectNameInfoEXT nameInfo = {VK_STRUCTURE_TYPE_DEBUG_MARKER_OBJECT_NAME_INFO_EXT};
     nameInfo.objectType   = VK_DEBUG_REPORT_OBJECT_TYPE_PIPELINE_EXT;
