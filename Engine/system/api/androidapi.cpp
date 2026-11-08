@@ -738,6 +738,8 @@ extern "C" void android_main(android_app* state) {
     return;
     }
   app = state;
+  // Android may free a window's surface on this thread, and that cleanup needs a JNI environment
+  JniEnv jni;
   int result = EXIT_FAILURE;
   try {
     result = runMain();
