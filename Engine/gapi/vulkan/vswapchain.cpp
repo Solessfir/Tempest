@@ -343,10 +343,6 @@ void VSwapchain::cleanupSurface() noexcept {
 
 void VSwapchain::reset() {
   cleanupSwapchain();
-#if defined(__ANDROID__)
-  // NativeActivity may replace its ANativeWindow after pause/resume.
-  cleanupSurface();
-#endif
   createSwapchain(device);
   }
 
