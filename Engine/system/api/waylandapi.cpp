@@ -5,6 +5,7 @@
 #include <Tempest/Except>
 #include <Tempest/Window>
 #include <Tempest/Log>
+#include <Tempest/Pixmap>
 
 #include <algorithm>
 #include <atomic>
@@ -129,6 +130,7 @@ struct WaylandApi::Private {
 
   // Globals
   wl_compositor*                   compositor             = nullptr;
+  wl_shm*                          shm                    = nullptr;
   wl_seat*                         seat                   = nullptr;
   xdg_wm_base*                     wmBase                 = nullptr;
   zxdg_decoration_manager_v1*      decorationManager      = nullptr;
@@ -140,6 +142,7 @@ struct WaylandApi::Private {
 
   // Exact versions we need to bind successfully: listeners and requests are written for these
   static constexpr uint32_t wlCompositorVersion                = 1;
+  static constexpr uint32_t wlShmVersion                       = 1;
   static constexpr uint32_t wlSeatVersion                      = 8; // v8: wl_pointer.axis_value120 (wheel in 1/120 notches)
   static constexpr uint32_t xdgWmBaseVersion                   = 6; // v6: xdg_toplevel state 'suspended'
   static constexpr uint32_t zxdgDecorationManagerV1Version     = 1;
@@ -158,6 +161,12 @@ struct WaylandApi::Private {
   // Pointer state between wl_pointer.enter and leave. Position is in WWindow::compositorPointerX/Y
   WWindow*                        pointerFocus           = nullptr; // window under pointer
   uint32_t                        pointerEnterSerial     = 0;       // serial of latest enter event
+
+  // Vertical scroll of the current wl_pointer.frame. Wheels send axis_value120 (used as is), touchpads only continuous
+  // 'axis' values, which are summed up into whole notches so apps that step per wheel event don't race.
+  int32_t                         scrollValue120         = 0;
+  double                          scrollContinuous       = 0;       // logical px
+  double                          scrollRemainder        = 0;       // touchpad scroll short of a notch, in 1/120 notches
 
   // Keymap from wl_keyboard.keymap, state follows wl_keyboard.modifiers; both null until first keymap.
   xkb_context*                    xkbContext             = nullptr;
@@ -181,6 +190,12 @@ struct WaylandApi::Private {
   // When the last wl_keyboard.enter was read (for the focus click filter)
   std::chrono::steady_clock::time_point focusInTime;
 
+  // CursorShape::Custom: a cursor surface showing the image from setCustomCursor. Null buffer = no image, shows the arrow.
+  wl_surface*                     cursorSurface          = nullptr;
+  wp_viewport*                    cursorViewport         = nullptr; // image is in physical pixels, the cursor surface in logical
+  wl_buffer*                      cursorBuffer           = nullptr;
+  int                             cursorW = 0, cursorH = 0, cursorHotX = 0, cursorHotY = 0;
+
   std::vector<std::unique_ptr<WWindow>> windows; // owns the windows; each WWindow keeps its address (handle, listener data)
   static inline std::deque<AppEvent>    appEvents; // in the order the compositor sent them
 
@@ -192,7 +207,10 @@ struct WaylandApi::Private {
   static void onWlPointerLeave(void* data, wl_pointer* pointer, uint32_t serial, wl_surface* surface);
   static void onWlPointerMotion(void* data, wl_pointer* pointer, uint32_t time, wl_fixed_t x, wl_fixed_t y);
   static void onWlPointerButton(void* data, wl_pointer* pointer, uint32_t serial, uint32_t time, uint32_t button, uint32_t state);
+  static void onWlPointerAxis(void* data, wl_pointer* pointer, uint32_t time, uint32_t axis, wl_fixed_t value);
   static void onWlPointerAxisValue120(void* data, wl_pointer* pointer, uint32_t axis, int32_t value120);
+  static void onWlPointerAxisStop(void* data, wl_pointer* pointer, uint32_t time, uint32_t axis);
+  static void onWlPointerFrame(void* data, wl_pointer* pointer);
   static void onZwpRelativePointerV1RelativeMotion(void* data, zwp_relative_pointer_v1* relativePointer, uint32_t utimeHi,
                                                    uint32_t utimeLo, wl_fixed_t dx, wl_fixed_t dy,
                                                    wl_fixed_t dxUnaccel, wl_fixed_t dyUnaccel);
@@ -240,6 +258,7 @@ struct WaylandApi::Private {
   AppEvent                               keyEvent(WWindow& w, uint32_t keycode, Event::Type type) const;
   bool                                   isWindowFocused(const WWindow* w) const;
   void                                   setPointerLock(WWindow& w, bool lock);
+  void                                   setCustomCursor(const WWindow& w);
   void                                   releaseHeldKeys(WWindow& w);
   void                                   releaseHeldButtons(WWindow& w);
   void                                   releasePointer();
@@ -278,6 +297,9 @@ void WaylandApi::Private::onWlRegistryGlobal(void* data, wl_registry* registry, 
   WaylandApi::Private* self = static_cast<Private*>(data);
   if(std::strcmp(interface, wl_compositor_interface.name)==0 && version>=wlCompositorVersion) {
     self->compositor = static_cast<wl_compositor*>(wl_registry_bind(registry, name, &wl_compositor_interface, wlCompositorVersion));
+    }
+  if(std::strcmp(interface, wl_shm_interface.name)==0 && version>=wlShmVersion) {
+    self->shm = static_cast<wl_shm*>(wl_registry_bind(registry, name, &wl_shm_interface, wlShmVersion));
     }
   if(std::strcmp(interface, xdg_wm_base_interface.name)==0 && version>=xdgWmBaseVersion) {
     self->wmBase = static_cast<xdg_wm_base*>(wl_registry_bind(registry, name, &xdg_wm_base_interface, xdgWmBaseVersion));
@@ -370,7 +392,14 @@ void WaylandApi::Private::onWlPointerEnter(void* data, [[maybe_unused]] wl_point
 void WaylandApi::Private::onWlPointerLeave(void* data, [[maybe_unused]] wl_pointer* pointer, [[maybe_unused]] uint32_t serial,
                                            [[maybe_unused]] wl_surface* surface) {
   // 'surface' may be null if it was destroyed meanwhile.
-  static_cast<Private*>(data)->pointerFocus = nullptr;
+  // Releases after a leave aren't sent to us, so held buttons would stay down (e.g. the compositor took the pointer).
+  auto self = static_cast<Private*>(data);
+  if(self->pointerFocus!=nullptr)
+    self->releaseHeldButtons(*self->pointerFocus);
+  self->pointerFocus     = nullptr;
+  self->scrollValue120   = 0;
+  self->scrollContinuous = 0;
+  self->scrollRemainder  = 0;
   }
 
 void WaylandApi::Private::onWlPointerMotion(void* data, [[maybe_unused]] wl_pointer* pointer, [[maybe_unused]] uint32_t time,
@@ -414,17 +443,47 @@ void WaylandApi::Private::onWlPointerButton(void* data, [[maybe_unused]] wl_poin
     }
   }
 
-void WaylandApi::Private::onWlPointerAxisValue120(void* data, [[maybe_unused]] wl_pointer* pointer, uint32_t axis, int32_t value120) {
-  // 120 per notch, like Tempest's delta on Windows; Wayland's sign is inverted (positive = down).
+void WaylandApi::Private::onWlPointerAxis(void* data, [[maybe_unused]] wl_pointer* pointer, [[maybe_unused]] uint32_t time,
+                                          uint32_t axis, wl_fixed_t value) {
   // Horizontal scrolling is ignored, like on X11.
-  if(axis!=WL_POINTER_AXIS_VERTICAL_SCROLL)
-    return;
+  if(axis==WL_POINTER_AXIS_VERTICAL_SCROLL)
+    static_cast<Private*>(data)->scrollContinuous += wl_fixed_to_double(value);
+  }
 
+void WaylandApi::Private::onWlPointerAxisValue120(void* data, [[maybe_unused]] wl_pointer* pointer, uint32_t axis, int32_t value120) {
+  if(axis==WL_POINTER_AXIS_VERTICAL_SCROLL)
+    static_cast<Private*>(data)->scrollValue120 += value120;
+  }
+
+void WaylandApi::Private::onWlPointerAxisStop(void* data, [[maybe_unused]] wl_pointer* pointer, [[maybe_unused]] uint32_t time,
+                                              uint32_t axis) {
+  // Fingers lifted: a partial notch doesn't carry over to the next gesture
+  if(axis==WL_POINTER_AXIS_VERTICAL_SCROLL)
+    static_cast<Private*>(data)->scrollRemainder = 0;
+  }
+
+void WaylandApi::Private::onWlPointerFrame(void* data, [[maybe_unused]] wl_pointer* pointer) {
+  // 120 per notch, like Tempest's delta on Windows; Wayland's sign is inverted (positive = down).
+  // Compositors report a wheel notch as 15 logical px of continuous scroll (libinput's convention).
+  constexpr double pxPerNotch = 15.0;
   auto self = static_cast<Private*>(data);
+  int32_t delta = 0;
+  if(self->scrollValue120!=0) {
+    delta = -self->scrollValue120;
+    }
+  else if(self->scrollContinuous!=0) {
+    self->scrollRemainder -= self->scrollContinuous*120.0/pxPerNotch;
+    const double notches = std::trunc(self->scrollRemainder/120.0);
+    self->scrollRemainder -= notches*120.0;
+    delta = int32_t(notches)*120;
+    }
+  self->scrollValue120   = 0;
+  self->scrollContinuous = 0;
+
   WWindow* w = self->pointerFocus;
-  if(w==nullptr || w->owner==nullptr || !self->isWindowFocused(w))
+  if(delta==0 || w==nullptr || w->owner==nullptr || !self->isWindowFocused(w))
     return;
-  appEvents.push_back({.type=Event::MouseWheel, .w=w, .delta=-value120});
+  appEvents.push_back({.type=Event::MouseWheel, .w=w, .delta=delta});
   }
 
 void WaylandApi::Private::onZwpRelativePointerV1RelativeMotion(void* data, [[maybe_unused]] zwp_relative_pointer_v1* relativePointer,
@@ -624,7 +683,12 @@ void WaylandApi::Private::onZxdgToplevelDecorationV1Configure([[maybe_unused]] v
 
 void WaylandApi::Private::onWpFractionalScaleV1PreferredScale(void* data, [[maybe_unused]] wp_fractional_scale_v1* fractionalScale, uint32_t scale) {
   auto w = static_cast<WWindow*>(data);
+  if(w->preferredScale==scale)
+    return;
   w->preferredScale = scale;
+  // The custom cursor's logical size and hotspot depend on the scale; showCursor only applies it while the pointer is over w
+  if(w->owner!=nullptr)
+    SystemApi::showCursor(reinterpret_cast<SystemApi::Window*>(w->surface), SystemApi::cursorShape(*w->owner));
   }
 
 void WaylandApi::Private::onZwpLockedPointerV1Locked(void* data, [[maybe_unused]] zwp_locked_pointer_v1* lockedPointer) {
@@ -658,11 +722,10 @@ const wl_pointer_listener WaylandApi::Private::wlPointerListener = {
   .leave           = onWlPointerLeave,
   .motion          = onWlPointerMotion,
   .button          = onWlPointerButton,
-  // TODO(wayland): touchpad scrolling: continuous axis events (axis_source finger) come without axis_value120
-  .axis            = ioIgnore,
-  .frame           = ioIgnore,
+  .axis            = onWlPointerAxis,
+  .frame           = onWlPointerFrame,
   .axis_source     = ioIgnore,
-  .axis_stop       = ioIgnore,
+  .axis_stop       = onWlPointerAxisStop,
   .axis_discrete   = ioIgnore, // not sent since v8 (replaced by axis_value120)
   .axis_value120   = onWlPointerAxisValue120,
   // axis_relative_direction (only v9+)
@@ -746,10 +809,11 @@ Event::MouseButton WaylandApi::Private::toButton(uint32_t button) {
   }
 
 wp_cursor_shape_device_v1_shape WaylandApi::Private::toCursorShape(CursorShape shape) {
-  // Hidden is handled by the caller.
+  // Hidden and Custom with an image are handled by the caller.
   switch(shape) {
     case CursorShape::Arrow:
-    case CursorShape::Hidden:    return WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_DEFAULT;
+    case CursorShape::Hidden:
+    case CursorShape::Custom:    return WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_DEFAULT; // Custom without an image
     case CursorShape::IBeam:     return WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_TEXT;
     case CursorShape::SizeVer:   return WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_NS_RESIZE;
     case CursorShape::SizeHor:   return WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_EW_RESIZE;
@@ -758,6 +822,15 @@ wp_cursor_shape_device_v1_shape WaylandApi::Private::toCursorShape(CursorShape s
     case CursorShape::SizeAll:   return WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_ALL_SCROLL;  // four arrows; all_resize needs v2
     }
   return WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_DEFAULT;
+  }
+
+void WaylandApi::Private::setCustomCursor(const WWindow& w) {
+  // Cursor surface size and hotspot are logical: the image is shown at physical size via the viewport.
+  // One cursor surface for all windows: sized for the window the pointer is over.
+  const double s = w.scale();
+  wp_viewport_set_destination(cursorViewport, std::max(1, int(std::lround(cursorW/s))), std::max(1, int(std::lround(cursorH/s))));
+  wl_surface_commit(cursorSurface);
+  wl_pointer_set_cursor(pointer, pointerEnterSerial, cursorSurface, int(std::lround(cursorHotX/s)), int(std::lround(cursorHotY/s)));
   }
 
 MouseEvent WaylandApi::Private::pointerEvent(const WWindow& w, Event::MouseButton button, int delta, Event::Type type) {
@@ -800,6 +873,14 @@ void WaylandApi::Private::setPointerLock(WWindow& w, bool lock) {
     zwp_locked_pointer_v1_add_listener(w.lockedPointer, &zwpLockedPointerV1Listener, &w);
     }
   else if(!lock && w.lockedPointer!=nullptr) {
+    if(w.pointerLocked) {
+      // The pointer reappears where the app's virtual cursor is instead of where it was locked.
+      // The hint is double-buffered: committed now, as it must apply before the lock is gone.
+      const double s = w.scale();
+      zwp_locked_pointer_v1_set_cursor_position_hint(w.lockedPointer, wl_fixed_from_double(w.appCursorX/s),
+                                                     wl_fixed_from_double(w.appCursorY/s));
+      wl_surface_commit(w.surface);
+      }
     ioDestroy(w.lockedPointer, zwp_locked_pointer_v1_destroy);
     w.pointerLocked = false;
     }
@@ -938,6 +1019,7 @@ bool WaylandApi::Private::hasRequiredGlobals() const {
     };
   const Required required[] = {
     {compositor,             wl_compositor_interface,                   wlCompositorVersion               },
+    {shm,                    wl_shm_interface,                          wlShmVersion                      },
     {wmBase,                 xdg_wm_base_interface,                     xdgWmBaseVersion                  },
     {decorationManager,      zxdg_decoration_manager_v1_interface,      zxdgDecorationManagerV1Version    },
     {viewporter,             wp_viewporter_interface,                   wpViewporterVersion               },
@@ -1001,6 +1083,10 @@ WaylandApi::Private::~Private() {
   while(!windows.empty())
     destroyWindow(windows.back().get());
 
+  ioDestroy(cursorBuffer,           wl_buffer_destroy);
+  ioDestroy(cursorViewport,         wp_viewport_destroy);
+  ioDestroy(cursorSurface,          wl_surface_destroy);
+
   ioDestroy(relativePointerManager, zwp_relative_pointer_manager_v1_destroy);
   ioDestroy(pointerConstraints,     zwp_pointer_constraints_v1_destroy);
   ioDestroy(cursorShapeManager,     wp_cursor_shape_manager_v1_destroy);
@@ -1019,6 +1105,7 @@ WaylandApi::Private::~Private() {
 
   static_assert(wlSeatVersion>=WL_SEAT_RELEASE_SINCE_VERSION);
   ioDestroy(seat,       wl_seat_release);
+  ioDestroy(shm,        wl_shm_destroy);
   ioDestroy(compositor, wl_compositor_destroy);
   ioDestroy(registry,   wl_registry_destroy);
 
@@ -1368,8 +1455,71 @@ void WaylandApi::implShowCursor(SystemApi::Window* w, CursorShape show) {
   const CursorShape shape = impl->isWindowFocused(ww) ? show : CursorShape::Arrow;
   if(shape==CursorShape::Hidden)
     wl_pointer_set_cursor(impl->pointer, impl->pointerEnterSerial, nullptr, 0, 0);
+  else if(shape==CursorShape::Custom && impl->cursorBuffer!=nullptr)
+    impl->setCustomCursor(*ww);
   else
     wp_cursor_shape_device_v1_set_shape(impl->cursorShapeDevice, impl->pointerEnterSerial, Private::toCursorShape(shape));
+  }
+
+void WaylandApi::implSetCustomCursor(const Tempest::Pixmap& image, int hotX, int hotY) {
+  wl_buffer* old = impl->cursorBuffer;
+  impl->cursorBuffer = nullptr;
+  if(!image.isEmpty() && image.format()==TextureFormat::RGBA8) {
+    const int    w    = int(image.w());
+    const int    h    = int(image.h());
+    const size_t size = size_t(w)*size_t(h)*4;
+    const int    fd   = memfd_create("tempest-cursor", MFD_CLOEXEC);
+    void*        map  = MAP_FAILED;
+    if(fd>=0 && ftruncate(fd, off_t(size))==0)
+      map = mmap(nullptr, size, PROT_READ|PROT_WRITE, MAP_SHARED, fd, 0);
+    if(map!=MAP_FAILED) {
+      // wl_shm ARGB8888 is premultiplied
+      auto src = reinterpret_cast<const uint8_t*>(image.data());
+      auto dst = static_cast<uint32_t*>(map);
+      for(size_t i=0; i<size_t(w)*size_t(h); ++i) {
+        const uint32_t a = src[i*4+3];
+        const uint32_t r = src[i*4+0]*a/255;
+        const uint32_t g = src[i*4+1]*a/255;
+        const uint32_t b = src[i*4+2]*a/255;
+        dst[i] = (a<<24) | (r<<16) | (g<<8) | b;
+        }
+      munmap(map, size);
+      wl_shm_pool* pool = wl_shm_create_pool(impl->shm, fd, int32_t(size));
+      impl->cursorBuffer = wl_shm_pool_create_buffer(pool, 0, w, h, w*4, WL_SHM_FORMAT_ARGB8888);
+      wl_shm_pool_destroy(pool);
+      impl->cursorW    = w;
+      impl->cursorH    = h;
+      impl->cursorHotX = hotX;
+      impl->cursorHotY = hotY;
+      }
+    else {
+      Log::e("WaylandApi: can't allocate the custom cursor image: ", std::strerror(errno));
+      }
+    if(fd>=0)
+      close(fd);
+    }
+
+  if(impl->cursorBuffer!=nullptr) {
+    if(impl->cursorSurface==nullptr) {
+      impl->cursorSurface  = wl_compositor_create_surface(impl->compositor);
+      impl->cursorViewport = wp_viewporter_get_viewport(impl->viewporter, impl->cursorSurface);
+      }
+    wl_surface_attach(impl->cursorSurface, impl->cursorBuffer, 0, 0);
+    wl_surface_damage(impl->cursorSurface, 0, 0, impl->cursorW, impl->cursorH);
+    wl_surface_commit(impl->cursorSurface);
+    }
+  else if(impl->cursorSurface!=nullptr) {
+    wl_surface_attach(impl->cursorSurface, nullptr, 0, 0);
+    wl_surface_commit(impl->cursorSurface);
+    }
+  // The old buffer may still be on the cursor surface: replaced first, then destroyed
+  if(old!=nullptr)
+    wl_buffer_destroy(old);
+
+  // Windows showing the old image get the new one (or the arrow)
+  for(auto& w:impl->windows)
+    if(w->owner!=nullptr && SystemApi::cursorShape(*w->owner)==CursorShape::Custom)
+      implShowCursor(reinterpret_cast<SystemApi::Window*>(w->surface), CursorShape::Custom);
   }
 
 bool WaylandApi::implIsRunning() {
