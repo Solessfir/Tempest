@@ -64,6 +64,31 @@ int main() {
     schedule.setFrameRate(0);
     require(schedule.nextDeadline(late)==late,"Disabling the cap did not reset it");
 
+    schedule.setFrameRate(60);
+    require(schedule.ready(epoch),"First polled frame should start immediately");
+    require(!schedule.ready(epoch+milliseconds(1)),"Polling allowed an early frame");
+    require(!schedule.ready(epoch+nanoseconds(16666665)),"Polling advanced the deadline on a miss");
+    require(schedule.ready(epoch+nanoseconds(16666666)),"Polling missed the first deadline");
+    require(!schedule.ready(epoch+nanoseconds(33333332)),"Polling lost its fractional remainder");
+    require(schedule.ready(epoch+nanoseconds(33333333)),"Polling missed the fractional deadline");
+    require(schedule.ready(late),"Polling did not recover after a stall");
+    require(!schedule.ready(late),"Polling generated a catch-up burst");
+    schedule.reset();
+    require(schedule.ready(late),"Polling kept an old lifecycle deadline");
+    schedule.setFrameRate(1);
+    require(schedule.ready(late),"Polling kept the old rate deadline");
+    require(!schedule.ready(late+milliseconds(999)),"One FPS polling allowed an early frame");
+    require(schedule.ready(late+seconds(1)),"One FPS polling missed its deadline");
+    schedule.reset();
+    require(schedule.ready(late),"Failed frame retry kept the consumed deadline");
+    require(!schedule.ready(late+milliseconds(1)),"Successful retry did not arm the rate limit");
+    schedule.reset();
+    require(schedule.ready(late+milliseconds(1)),"Unavailable image delayed retry by a full frame");
+    require(!schedule.ready(late+seconds(1)),"Retry lost the one-second frame budget");
+    require(schedule.ready(late+seconds(1)+milliseconds(1)),"Retry missed the new frame deadline");
+    schedule.setFrameRate(0);
+    require(schedule.ready(late) && schedule.ready(late),"Uncapped polling delayed a frame");
+
     Tempest::FramePacer pacer;
     pacer.setFrameRate(60);
     const auto start = steady_clock::now();

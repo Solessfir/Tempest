@@ -33,6 +33,7 @@ class VSwapchain : public AbstractGraphicsApi::Swapchain {
     uint32_t                 h()      const override;
     void                     reset() override;
     auto                     currentBackBuffer() -> AbstractGraphicsApi::Texture* override;
+    auto                     tryCurrentBackBuffer() -> AbstractGraphicsApi::Texture* override;
     void                     setHdr(bool enabled) override;
     bool                     isHdr() const override { return hdrActive; }
     float                    hdrMaxLuminance() const override { return hdrActive ? hdrPeak : 0.f; }
@@ -55,7 +56,7 @@ class VSwapchain : public AbstractGraphicsApi::Swapchain {
         FenceList& operator = (FenceList&& oth);
         ~FenceList();
 
-        void waitAll();
+        void waitAll(uint32_t skip = uint32_t(-1));
         VkFence& operator[](size_t i) { return data[i]; }
 
       private:
@@ -120,6 +121,7 @@ class VSwapchain : public AbstractGraphicsApi::Swapchain {
     uint32_t                 frameId  = 0;
     VTextureSwapchain        currentAtt;
     SyncState                currentSyncState = SyncState::S_Idle;
+    bool                     acquireFenceReset = false;
     bool                     hdrRequested = false;
     bool                     hdrActive = false;
     float                    hdrPeak = 0.f;
@@ -144,7 +146,8 @@ class VSwapchain : public AbstractGraphicsApi::Swapchain {
     uint32_t                 findImageCount(const SwapChainSupport& support) const;
 
     bool                     isSwapchainLost(VkResult code) const;
-    VkResult                 implAcquireNextImage();
+    auto                     implCurrentBackBuffer(uint64_t timeout) -> AbstractGraphicsApi::Texture*;
+    VkResult                 implAcquireNextImage(uint64_t timeout);
 
   friend class VDevice;
   };

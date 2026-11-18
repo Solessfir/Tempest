@@ -24,6 +24,13 @@ class FrameSchedule {
       remainder = 0;
       }
 
+    bool ready(Clock::time_point now) {
+      if(rate!=0 && armed && now<next)
+        return false;
+      nextDeadline(now);
+      return true;
+      }
+
     Clock::time_point nextDeadline(Clock::time_point now) {
       if(rate==0) {
         reset();

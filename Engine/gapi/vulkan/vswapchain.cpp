@@ -48,17 +48,6 @@ void VSwapchain::WindowRelease::operator()(ANativeWindow* w) const noexcept {
   }
 #endif
 
-static VkResult VKAPI_CALL vkxRevertFence(VkDevice device, VkFence* pFence) {
-  // HACK: revert fence state to signaled
-  VkFenceCreateInfo fenceInfo = {};
-  fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
-  fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
-
-  vkDestroyFence(device, *pFence, nullptr);
-  *pFence = VK_NULL_HANDLE;
-  return vkCreateFence(device,&fenceInfo,nullptr,pFence);
-  }
-
 static VkResult vkAcquireNextImageDBG(
     VkDevice                                    device,
     VkSwapchainKHR                              swapchain,
@@ -121,8 +110,13 @@ VSwapchain::FenceList::~FenceList() {
     vkDestroyFence(dev,data[i],nullptr);
   }
 
-void VSwapchain::FenceList::waitAll() {
-  if(size>0)
+void VSwapchain::FenceList::waitAll(uint32_t skip) {
+  if(skip<size) {
+    for(uint32_t i=0; i<size; ++i)
+      if(i!=skip)
+        vkWaitForFences(dev, 1, &data[i], VK_TRUE, std::numeric_limits<uint64_t>::max());
+    }
+  else if(size>0)
     vkWaitForFences(dev, size, data.get(), VK_TRUE,std::numeric_limits<uint64_t>::max());
   }
 
@@ -312,7 +306,7 @@ VkResult VSwapchain::createSurface(VkInstance instance, void* hwnd, VkSurfaceKHR
 
 void VSwapchain::cleanupSwapchain() noexcept {
   // aquire is not a 'true' queue operation - have to wait explicitly on it
-  aquireFence.waitAll();
+  aquireFence.waitAll(acquireFenceReset ? frameId : uint32_t(-1));
   // wait for vkQueuePresent to finish, so we can delete semaphores
   // NOTE: maybe update to VK_KHR_present_wait ?
   device.presentQueue->waitIdle();
@@ -330,6 +324,7 @@ void VSwapchain::cleanupSwapchain() noexcept {
   swapChainExtent      = {};
   imgIndex             = 0;
   frameId              = 0;
+  acquireFenceReset    = false;
   }
 
 void VSwapchain::cleanupSurface() noexcept {
@@ -621,15 +616,26 @@ bool VSwapchain::isSwapchainLost(VkResult code) const {
   }
 
 AbstractGraphicsApi::Texture* VSwapchain::currentBackBuffer() {
+  return implCurrentBackBuffer(std::numeric_limits<uint64_t>::max());
+  }
+
+AbstractGraphicsApi::Texture* VSwapchain::tryCurrentBackBuffer() {
+  return implCurrentBackBuffer(0);
+  }
+
+AbstractGraphicsApi::Texture* VSwapchain::implCurrentBackBuffer(uint64_t timeout) {
   if(currentSyncState == SyncState::S_Idle) {
 #if defined(__ANDROID__)
     // Drivers may keep presenting to a window Android has already replaced
     if(window.get()!=AndroidApi::nativeWindow(hwnd))
       throw SwapchainSuboptimal();
 #endif
-    const VkResult code = implAcquireNextImage();
+    const VkResult code = implAcquireNextImage(timeout);
+    if(code==VK_TIMEOUT || code==VK_NOT_READY)
+      return nullptr;
     if(isSwapchainLost(code))
       throw SwapchainSuboptimal();
+    vkAssert(code);
     currentSyncState = SyncState::S_Aquired;
     }
 
@@ -651,31 +657,37 @@ VkSemaphore VSwapchain::aquireSemaphore() {
   return VK_NULL_HANDLE;
   }
 
-VkResult VSwapchain::implAcquireNextImage() {
+VkResult VSwapchain::implAcquireNextImage(uint64_t timeout) {
   auto dev = device.device.impl;
 
-  vkWaitForFences(dev, 1, &aquireFence[frameId], VK_TRUE, std::numeric_limits<uint64_t>::max());
-  vkResetFences(dev, 1, &aquireFence[frameId]);
+  if(!acquireFenceReset) {
+    const auto code = vkWaitForFences(dev, 1, &aquireFence[frameId], VK_TRUE, timeout);
+    if(code!=VK_SUCCESS)
+      return code;
+    }
 
   // We need to wait for any command-buffer that may reference aquireSem[] in the past
-  vkWaitForFences(dev, 1, &presentFence[frameId], VK_TRUE, std::numeric_limits<uint64_t>::max());
-  vkResetFences(dev, 1, &presentFence[frameId]);
+  const auto ready = vkWaitForFences(dev, 1, &presentFence[frameId], VK_TRUE, timeout);
+  if(ready!=VK_SUCCESS)
+    return ready;
+
+  vkAssert(vkResetFences(dev, 1, &aquireFence[frameId]));
+  // A timeout leaves this fence reset but unsubmitted; retries and cleanup must skip its wait.
+  acquireFenceReset = true;
 
   uint32_t id   = uint32_t(-1);
   VkResult code = vkAcquireNextImageDBG(device.device.impl,
                                         swapChain,
-                                        std::numeric_limits<uint64_t>::max(),
+                                        timeout,
                                         aquireSem[frameId],
                                         aquireFence[frameId],
                                         &id);
   if(code!=VK_SUCCESS && code!=VK_SUBOPTIMAL_KHR) {
-    // Failed acquisition leaves the fence unsignaled, including on fatal errors.
-    auto rc = vkxRevertFence(device.device.impl, &aquireFence[frameId]);
-    if(rc!=VK_SUCCESS)
-      std::terminate(); // unrecoverable
     return code;
     }
 
+  acquireFenceReset = false;
+  vkAssert(vkResetFences(dev, 1, &presentFence[frameId]));
   imgIndex = id;
   return code;
   }
