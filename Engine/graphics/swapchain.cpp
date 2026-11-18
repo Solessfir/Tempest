@@ -49,6 +49,15 @@ Attachment& Swapchain::acquire() {
   return ret;
   }
 
+Attachment* Swapchain::tryAcquire() {
+  auto* img = impl.handler->tryCurrentBackBuffer();
+  if(img==nullptr)
+    return nullptr;
+  auto& ret = imgRing[imgRingAt];
+  ret = Attachment(impl.handler, img);
+  return &ret;
+  }
+
 void Swapchain::setHdr(bool enabled) {
   impl.handler->setHdr(enabled);
   implReset();

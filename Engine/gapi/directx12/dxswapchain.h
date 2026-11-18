@@ -28,6 +28,7 @@ class DxSwapchain : public AbstractGraphicsApi::Swapchain {
     uint32_t    h()      const override { return imgH; }
     void        reset() override;
     auto        currentBackBuffer() -> AbstractGraphicsApi::Texture* override;
+    auto        tryCurrentBackBuffer() -> AbstractGraphicsApi::Texture* override { return currentBackBuffer(); }
 
     void        queuePresent();
 

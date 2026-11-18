@@ -21,6 +21,8 @@ class Swapchain final {
 
     void        reset();
     Attachment& acquire();
+    // Poll without waiting; nullptr means no image is ready or the backend cannot poll (Metal).
+    Attachment* tryAcquire();
 
     // The caller must finish outstanding frames before changing the output mode.
     // HDR is a request, not a guarantee; check isHdr() after creation and every reset.

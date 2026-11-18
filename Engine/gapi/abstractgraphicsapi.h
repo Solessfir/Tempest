@@ -556,6 +556,7 @@ namespace Tempest {
         virtual uint32_t w() const=0;
         virtual uint32_t h() const=0;
         virtual Texture* currentBackBuffer() = 0;
+        virtual Texture* tryCurrentBackBuffer() { return nullptr; }
         };
       struct Pipeline:Shared {
         virtual IVec3  workGroupSize() const = 0;
