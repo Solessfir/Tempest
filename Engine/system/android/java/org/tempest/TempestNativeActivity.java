@@ -198,6 +198,7 @@ public class TempestNativeActivity extends NativeActivity implements InputManage
 
     private native void nativeSetText(String text);
     private native void nativeEditorAction();
+    private native void nativeGamepadVendor(int vendor);
     private native void nativeGamepad(boolean connected, int buttons, float lx, float ly,
                                       float rx, float ry, float lt, float rt);
 
@@ -326,6 +327,8 @@ public class TempestNativeActivity extends NativeActivity implements InputManage
     private void useController(int id) {
         stopVibration();
         controllerId = id;
+        InputDevice device = InputDevice.getDevice(id);
+        nativeGamepadVendor(device == null ? 0 : device.getVendorId());
         resetController();
         reportControllerVibration();
     }
@@ -362,8 +365,7 @@ public class TempestNativeActivity extends NativeActivity implements InputManage
         stopVibration();
         displayManager.unregisterDisplayListener(displayListener);
         inputManager.unregisterInputDeviceListener(this);
-        controllerId = -1;
-        resetController();
+        useController(-1);
         super.onDestroy();
     }
 

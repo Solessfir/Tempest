@@ -227,6 +227,12 @@ Java_org_tempest_TempestNativeActivity_nativeGamepad(JNIEnv*, jobject, jboolean 
   }
 
 extern "C" JNIEXPORT void JNICALL
+Java_org_tempest_TempestNativeActivity_nativeGamepadVendor(JNIEnv*, jobject, jint vendor) {
+  std::lock_guard<std::mutex> guard(gamepadSync);
+  gamepad.vendorId = uint16_t(vendor);
+  }
+
+extern "C" JNIEXPORT void JNICALL
 Java_org_tempest_TempestNativeActivity_nativeSetText(JNIEnv* env, jobject, jstring text) {
   std::u32string next;
   if(text!=nullptr) {

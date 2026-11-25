@@ -39,6 +39,8 @@ struct GamepadState {
   float leftTrigger  = 0.0f;
   float rightTrigger = 0.0f;
   bool  connected    = false;
+  // USB vendor of the active controller, so button names can follow its labels (0x054c is Sony)
+  uint16_t vendorId  = 0;
   };
 
 class SizeEvent;
