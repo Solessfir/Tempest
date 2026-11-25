@@ -307,14 +307,25 @@ public class TempestNativeActivity extends NativeActivity implements InputManage
     private void refreshController() {
         if (isController(InputDevice.getDevice(controllerId)))
             return;
-        stopVibration();
-        controllerId = -1;
+        // A DualShock or DualSense also lists its motion sensors as a joystick, and phones may list virtual pads:
+        // prefer a real device with gamepad buttons, and switch to whichever pad is pressed later
+        int pick = -1, rank = 0;
         for (int id : InputDevice.getDeviceIds()) {
-            if (isController(InputDevice.getDevice(id))) {
-                controllerId = id;
-                break;
+            InputDevice device = InputDevice.getDevice(id);
+            if (!isController(device))
+                continue;
+            int r = (device.supportsSource(InputDevice.SOURCE_GAMEPAD) ? 2 : 1) + (device.isVirtual() ? 0 : 2);
+            if (r > rank) {
+                pick = id;
+                rank = r;
             }
         }
+        useController(pick);
+    }
+
+    private void useController(int id) {
+        stopVibration();
+        controllerId = id;
         resetController();
         reportControllerVibration();
     }
@@ -383,8 +394,11 @@ public class TempestNativeActivity extends NativeActivity implements InputManage
         if (isController(event.getDevice())) {
             int bit = controllerButton(event.getKeyCode());
             if (bit != 0) {
-                if (event.getDeviceId() != controllerId)
-                    return true;
+                if (event.getDeviceId() != controllerId) {
+                    if (event.getAction() != KeyEvent.ACTION_DOWN)
+                        return true;
+                    useController(event.getDeviceId());
+                }
                 if (event.getAction() == KeyEvent.ACTION_DOWN)
                     controllerButtons |= bit;
                 else if (event.getAction() == KeyEvent.ACTION_UP)
