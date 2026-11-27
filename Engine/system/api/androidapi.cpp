@@ -182,6 +182,22 @@ struct JniEnv {
       env->DeleteLocalRef(cls);
     }
 
+  float callFloat(const char* name, const char* sig) {
+    if(env==nullptr)
+      return 0.f;
+    jobject   activity = app->activity->clazz;
+    jclass    cls      = env->GetObjectClass(activity);
+    jmethodID method   = cls==nullptr ? nullptr : env->GetMethodID(cls,name,sig);
+    float     ret      = method==nullptr ? 0.f : env->CallFloatMethod(activity,method);
+    if(env->ExceptionCheck()) {
+      env->ExceptionClear();
+      ret = 0.f;
+      }
+    if(cls!=nullptr)
+      env->DeleteLocalRef(cls);
+    return ret;
+    }
+
   JavaVM* vm       = nullptr;
   JNIEnv* env      = nullptr;
   bool    attached = false;
@@ -270,20 +286,7 @@ Java_org_tempest_TempestNativeActivity_nativeEditorAction(JNIEnv*, jobject) {
   }
 
 extern "C" float tempest_android_hdr_peak_luminance() {
-  JniEnv jni;
-  if(jni.env==nullptr)
-    return 0.f;
-  jobject   activity = app->activity->clazz;
-  jclass    cls      = jni.env->GetObjectClass(activity);
-  jmethodID method   = cls==nullptr ? nullptr : jni.env->GetMethodID(cls,"getHdrPeakLuminance","()F");
-  float     peak     = method==nullptr ? 0.f : jni.env->CallFloatMethod(activity,method);
-  if(jni.env->ExceptionCheck()) {
-    jni.env->ExceptionClear();
-    peak = 0.f;
-    }
-  if(cls!=nullptr)
-    jni.env->DeleteLocalRef(cls);
-  return peak;
+  return JniEnv().callFloat("getHdrPeakLuminance","()F");
   }
 
 AndroidApi::AndroidApi() {
@@ -325,20 +328,7 @@ AndroidApi::AndroidApi() {
   }
 
 float AndroidApi::maxRefreshRate() {
-  JniEnv jni;
-  if(jni.env==nullptr)
-    return 0.f;
-  jobject   activity = app->activity->clazz;
-  jclass    cls      = jni.env->GetObjectClass(activity);
-  jmethodID method   = cls==nullptr ? nullptr : jni.env->GetMethodID(cls,"getMaxRefreshRate","()F");
-  float     rate     = method==nullptr ? 0.f : jni.env->CallFloatMethod(activity,method);
-  if(jni.env->ExceptionCheck()) {
-    jni.env->ExceptionClear();
-    rate = 0.f;
-    }
-  if(cls!=nullptr)
-    jni.env->DeleteLocalRef(cls);
-  return rate;
+  return JniEnv().callFloat("getMaxRefreshRate","()F");
   }
 
 std::filesystem::path AndroidApi::internalDataPath() {
