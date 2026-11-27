@@ -324,6 +324,23 @@ AndroidApi::AndroidApi() {
   setupKeyTranslate(k,12);
   }
 
+float AndroidApi::maxRefreshRate() {
+  JniEnv jni;
+  if(jni.env==nullptr)
+    return 0.f;
+  jobject   activity = app->activity->clazz;
+  jclass    cls      = jni.env->GetObjectClass(activity);
+  jmethodID method   = cls==nullptr ? nullptr : jni.env->GetMethodID(cls,"getMaxRefreshRate","()F");
+  float     rate     = method==nullptr ? 0.f : jni.env->CallFloatMethod(activity,method);
+  if(jni.env->ExceptionCheck()) {
+    jni.env->ExceptionClear();
+    rate = 0.f;
+    }
+  if(cls!=nullptr)
+    jni.env->DeleteLocalRef(cls);
+  return rate;
+  }
+
 std::filesystem::path AndroidApi::internalDataPath() {
   assert(app!=nullptr && app->activity!=nullptr);
   return app->activity->internalDataPath;

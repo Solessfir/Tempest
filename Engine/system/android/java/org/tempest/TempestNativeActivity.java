@@ -34,6 +34,7 @@ import android.widget.FrameLayout;
 
 public class TempestNativeActivity extends NativeActivity implements InputManager.InputDeviceListener {
     private volatile float hdrPeakLuminance;
+    private volatile float maxRefreshRate;
     private int hdrDisplayId = -1;
     private DisplayManager displayManager;
     private final DisplayManager.DisplayListener displayListener = new DisplayManager.DisplayListener() {
@@ -65,6 +66,7 @@ public class TempestNativeActivity extends NativeActivity implements InputManage
 
     // Called from the render thread; Android display queries stay on the activity thread.
     public float getHdrPeakLuminance() { return hdrPeakLuminance; }
+    public float getMaxRefreshRate() { return maxRefreshRate; }
 
     @SuppressWarnings("deprecation")
     private void refreshHdrDisplay() {
@@ -86,6 +88,15 @@ public class TempestNativeActivity extends NativeActivity implements InputManage
                 }
             }
         }
+        float rate = display == null ? 0 : display.getRefreshRate();
+        if (display != null && Build.VERSION.SDK_INT >= 23) {
+            Display.Mode current = display.getMode();
+            for (Display.Mode mode : display.getSupportedModes()) {
+                if (mode.getPhysicalWidth() == current.getPhysicalWidth() && mode.getPhysicalHeight() == current.getPhysicalHeight())
+                    rate = Math.max(rate, mode.getRefreshRate());
+            }
+        }
+        maxRefreshRate = rate;
         if (peak != hdrPeakLuminance || displayId != hdrDisplayId) {
             hdrPeakLuminance = peak;
             hdrDisplayId = displayId;

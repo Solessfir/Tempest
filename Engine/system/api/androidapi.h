@@ -13,6 +13,8 @@ class AndroidApi final : SystemApi {
     static std::filesystem::path externalDataPath();
     // Current window of the activity, or null while it is hidden or for another activity
     static ANativeWindow*        nativeWindow(SystemApi::Window* w);
+    // Highest refresh rate the display supports at its current resolution, or 0 if unknown
+    static float                 maxRefreshRate();
 
   private:
     AndroidApi();
